@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Worker: ruff + mypy on save",
+      "trigger": "PostFileSave",
+      "description": "Runs ruff and mypy whenever a .py file is saved. No-ops until the Python worker package exists.",
+      "matcher": "\\.py$",
+      "action": {
+        "type": "command",
+        "command": "if [ -f worker/pyproject.toml ]; then cd worker && ruff check . && mypy .; else echo \"pigeonhole: worker not set up yet (needs Python>=3.11) — skipping\"; fi",
+        "timeout": 180
+      }
+    }
+  ]
+}

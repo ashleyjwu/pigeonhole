@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Verify on task completion",
+      "trigger": "PostTaskExec",
+      "description": "After a spec task is marked complete, run the web verify suite + build and the worker checks. No-ops for whichever package is not yet set up.",
+      "action": {
+        "type": "command",
+        "command": "if [ -d web ] && [ -d web/node_modules ]; then (cd web && npm run -s verify && npm run -s build) || echo \"pigeonhole: web verify/build FAILED\"; else echo \"pigeonhole: web deps not installed — skipping web verify\"; fi; if [ -f worker/pyproject.toml ]; then (cd worker && ruff check . && mypy . && pytest -q) || echo \"pigeonhole: worker checks FAILED\"; fi",
+        "timeout": 600
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Web: typecheck + lint on save",
+      "trigger": "PostFileSave",
+      "description": "Runs the web TypeScript type-checker and ESLint whenever a .ts/.tsx file is saved. No-ops until web dependencies are installed under Node 20+.",
+      "matcher": "\\.(ts|tsx)$",
+      "action": {
+        "type": "command",
+        "command": "if [ -d web ] && [ -d web/node_modules ]; then cd web && npm run -s typecheck && npm run -s lint; else echo \"pigeonhole: web deps not installed yet (needs Node>=20.9 + npm install) — skipping\"; fi",
+        "timeout": 180
+      }
+    }
+  ]
+}

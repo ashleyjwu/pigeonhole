@@ -1,0 +1,48 @@
+# ── Dependencies ──
+node_modules/
+.pnp
+.pnp.*
+
+# ── Next.js / build output ──
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# ── Environment / secrets (never commit real values) ──
+.env
+.env.*
+!.env.example
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# ── Test / coverage ──
+coverage/
+.vitest/
+htmlcov/
+
+# ── Local data (full personal Spotify dumps stay out of git) ──
+/data/
+*.local.json
+
+# ── Logs ──
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# ── OS / editor cruft ──
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*~
