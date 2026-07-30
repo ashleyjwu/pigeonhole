@@ -28,7 +28,6 @@ export interface TrackSummary {
   albumName: string | null;
   albumImageUrl: string | null;
   releaseYear: number | null;
-  popularity: number | null;
   durationMs: number | null;
   explicit: boolean;
 }
@@ -47,7 +46,6 @@ interface RawTrack {
     images?: { url: string }[];
     release_date?: string;
   };
-  popularity?: number;
   duration_ms?: number;
   explicit?: boolean;
 }
@@ -62,7 +60,6 @@ function toTrackSummary(raw: RawTrack): TrackSummary {
     albumName: raw.album?.name ?? null,
     albumImageUrl: raw.album?.images?.[0]?.url ?? null,
     releaseYear: year && /^\d{4}$/.test(year) ? Number(year) : null,
-    popularity: raw.popularity ?? null,
     durationMs: raw.duration_ms ?? null,
     explicit: raw.explicit ?? false,
   };
@@ -138,9 +135,10 @@ export class SpotifyClient {
     return (payload.tracks?.items ?? []).map(toTrackSummary);
   }
 
-  /** Append a track to a playlist. Returns the new playlist snapshot id. */
+  /** Append a track to a playlist. Returns the new playlist snapshot id.
+   *  NOTE: POST /playlists/{id}/tracks became /items in the Feb-2026 API. */
   async addTrackToPlaylist(playlistId: string, trackId: string): Promise<string> {
-    const response = await this.request(`${API_BASE}/playlists/${playlistId}/tracks`, {
+    const response = await this.request(`${API_BASE}/playlists/${playlistId}/items`, {
       method: "POST",
       body: JSON.stringify({ uris: [`spotify:track:${trackId}`] }),
     });

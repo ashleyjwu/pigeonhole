@@ -5,7 +5,7 @@ from typing import Any
 
 from pigeonhole_worker.sync import PlaylistTrackRecord, TrackRecord, parse_track, run_sync
 
-# ── fixtures (sanitized shapes matching the real API) ────────────────────
+# ── fixtures (sanitized shapes matching the Feb-2026 API) ────────────────
 
 
 def raw_track(track_id: str, artist_id: str = "art1", **overrides: Any) -> dict[str, Any]:
@@ -14,7 +14,6 @@ def raw_track(track_id: str, artist_id: str = "art1", **overrides: Any) -> dict[
         "name": f"Track {track_id}",
         "artists": [{"id": artist_id, "name": f"Artist {artist_id}"}],
         "album": {"name": "Album", "release_date": "2020-01-15"},
-        "popularity": 40,
         "explicit": False,
         "duration_ms": 180_000,
         "is_local": False,
@@ -31,13 +30,23 @@ def playlist_payload(
         "name": f"Playlist {playlist_id}",
         "description": "",
         "snapshot_id": snapshot,
-        "tracks": {"total": 1},
+        "items": {"total": 1},  # renamed from `tracks` in Feb-2026 API
         "owner": {"id": owner},
         "collaborative": False,
     }
 
 
-def item(track: dict[str, Any] | None, added_at: str = "2024-01-01T00:00:00Z") -> dict[str, Any]:
+def playlist_entry(
+    track: dict[str, Any] | None, added_at: str = "2024-01-01T00:00:00Z"
+) -> dict[str, Any]:
+    """Playlist entries nest the track under `item` (Feb-2026 rename)."""
+    return {"item": track, "added_at": added_at, "is_local": False}
+
+
+def saved_entry(
+    track: dict[str, Any] | None, added_at: str = "2024-01-01T00:00:00Z"
+) -> dict[str, Any]:
+    """Saved-track entries still use the `track` key."""
     return {"track": track, "added_at": added_at}
 
 
@@ -49,28 +58,21 @@ class FakeSpotify:
         playlists: list[dict[str, Any]],
         playlist_items: dict[str, list[dict[str, Any]]],
         saved_items: list[dict[str, Any]] | None = None,
-        artists: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         self.playlists = playlists
         self.playlist_items = playlist_items
         self.saved_items = saved_items or []
-        self.artists = artists or {}
-        self.track_fetches: list[str] = []
-        self.artist_requests: list[list[str]] = []
+        self.item_fetches: list[str] = []
 
     def get_my_playlists(self) -> list[dict[str, Any]]:
         return self.playlists
 
-    def get_playlist_tracks(self, playlist_id: str) -> list[dict[str, Any]]:
-        self.track_fetches.append(playlist_id)
+    def get_playlist_items(self, playlist_id: str) -> list[dict[str, Any]]:
+        self.item_fetches.append(playlist_id)
         return self.playlist_items[playlist_id]
 
     def get_saved_tracks(self) -> list[dict[str, Any]]:
         return self.saved_items
-
-    def get_artists(self, ids: list[str]) -> list[dict[str, Any]]:
-        self.artist_requests.append(ids)
-        return [self.artists.get(i, {"id": i, "name": i, "genres": []}) for i in ids]
 
 
 class FakeRepo:
@@ -102,9 +104,6 @@ class FakeRepo:
     def replace_saved_tracks(self, user_id: str, entries: list[PlaylistTrackRecord]) -> None:
         self.saved = entries
 
-    def known_artist_ids(self) -> set[str]:
-        return set(self.artists)
-
     def upsert_artists(self, artists: list[dict[str, Any]]) -> None:
         for a in artists:
             self.artists[a["id"]] = a
@@ -121,6 +120,7 @@ def test_parse_track_maps_fields() -> None:
     assert record is not None
     assert record.spotify_id == "t1"
     assert record.artist_ids == ["art1"]
+    assert record.artist_names == ["Artist art1"]
     assert record.release_year == 2020
 
 
@@ -140,14 +140,21 @@ def test_parse_track_handles_missing_release_date() -> None:
 
 
 def test_full_sync_persists_everything() -> None:
+    collab = playlist_payload("p2", "snap2", owner="other")
+    collab["collaborative"] = True  # foreign but collaborative -> still synced
     spotify = FakeSpotify(
-        playlists=[playlist_payload("p1", "snap1"), playlist_payload("p2", "snap2", owner="other")],
+        playlists=[
+            playlist_payload("p1", "snap1"),
+            collab,
+        ],
         playlist_items={
-            "p1": [item(raw_track("t1", "art1")), item(raw_track("t2", "art2"))],
-            "p2": [item(raw_track("t3", "art1"))],
+            "p1": [
+                playlist_entry(raw_track("t1", "art1")),
+                playlist_entry(raw_track("t2", "art2")),
+            ],
+            "p2": [playlist_entry(raw_track("t3", "art1"))],
         },
-        saved_items=[item(raw_track("t4", "art3"))],
-        artists={"art1": {"id": "art1", "name": "One", "genres": ["indie rock"]}},
+        saved_items=[saved_entry(raw_track("t4", "art3"))],
     )
     repo = FakeRepo()
     stats = run_sync(repo, spotify, "user-1", "owner-spotify")  # type: ignore[arg-type]
@@ -156,34 +163,54 @@ def test_full_sync_persists_everything() -> None:
     assert stats.playlists_synced == 2
     assert stats.tracks_upserted == 3
     assert stats.saved_tracks == 1
+    assert stats.artists_upserted == 3
     assert set(repo.tracks) == {"t1", "t2", "t3", "t4"}
     assert repo.playlists["p1"]["is_owned"] is True
     assert repo.playlists["p2"]["is_owned"] is False
     assert [e.track_id for e in repo.playlist_tracks["p1"]] == ["t1", "t2"]
     assert [e.track_id for e in repo.saved] == ["t4"]
+    # artists harvested from embedded track data (id + name)
     assert set(repo.artists) == {"art1", "art2", "art3"}
+    assert repo.artists["art1"]["name"] == "Artist art1"
     assert repo.synced_at is not None
+
+
+def test_foreign_playlists_are_recorded_but_not_fetched() -> None:
+    spotify = FakeSpotify(
+        playlists=[
+            playlist_payload("mine", "snap1"),
+            playlist_payload("followed", "snap9", owner="someone-else"),
+        ],
+        playlist_items={"mine": [playlist_entry(raw_track("t1"))]},
+    )
+    repo = FakeRepo()
+    stats = run_sync(repo, spotify, "user-1", "owner-spotify")  # type: ignore[arg-type]
+
+    assert stats.playlists_foreign == 1
+    assert spotify.item_fetches == ["mine"]  # never touched the followed one
+    assert "followed" in repo.playlists  # metadata still recorded
+    assert "followed" not in repo.playlist_tracks
 
 
 def test_incremental_sync_skips_unchanged_snapshots() -> None:
     spotify = FakeSpotify(
         playlists=[playlist_payload("p1", "snap1"), playlist_payload("p2", "snap2-new")],
-        playlist_items={"p2": [item(raw_track("t9"))]},
+        playlist_items={"p2": [playlist_entry(raw_track("t9"))]},
     )
     repo = FakeRepo(snapshots={"p1": "snap1", "p2": "snap2-old"})
     stats = run_sync(repo, spotify, "user-1", "owner-spotify")  # type: ignore[arg-type]
 
     assert stats.playlists_skipped == 1
     assert stats.playlists_synced == 1
-    assert spotify.track_fetches == ["p2"]  # p1 never re-fetched
+    assert spotify.item_fetches == ["p2"]  # p1 never re-fetched
 
 
 def test_sync_skips_local_and_unavailable_tracks() -> None:
+    local_entry = playlist_entry(raw_track("t2"))
+    local_entry["is_local"] = True
     spotify = FakeSpotify(
         playlists=[playlist_payload("p1", "snap1")],
-        playlist_items={
-            "p1": [item(raw_track("t1")), item(raw_track("t2", is_local=True)), item(None)]
-        },
+        playlist_items={"p1": [playlist_entry(raw_track("t1")), local_entry, playlist_entry(None)]},
     )
     repo = FakeRepo()
     stats = run_sync(repo, spotify, "user-1", "owner-spotify")  # type: ignore[arg-type]
@@ -192,20 +219,6 @@ def test_sync_skips_local_and_unavailable_tracks() -> None:
     assert [e.track_id for e in repo.playlist_tracks["p1"]] == ["t1"]
     # positions stay contiguous after skips
     assert [e.position for e in repo.playlist_tracks["p1"]] == [0]
-
-
-def test_artists_fetched_only_when_unknown() -> None:
-    spotify = FakeSpotify(
-        playlists=[playlist_payload("p1", "snap1")],
-        playlist_items={
-            "p1": [item(raw_track("t1", "art-known")), item(raw_track("t2", "art-new"))]
-        },
-    )
-    repo = FakeRepo()
-    repo.artists["art-known"] = {"id": "art-known"}
-    run_sync(repo, spotify, "user-1", "owner-spotify")  # type: ignore[arg-type]
-
-    assert spotify.artist_requests == [["art-new"]]
 
 
 def test_sync_passes_explicit_timestamp() -> None:

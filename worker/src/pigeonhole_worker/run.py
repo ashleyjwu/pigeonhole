@@ -87,11 +87,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             f"done: {stats.playlists_synced} playlists synced, "
             f"{stats.playlists_skipped} skipped (unchanged), "
+            f"{stats.playlists_foreign} foreign (followed, not owned), "
             f"{stats.tracks_upserted} tracks upserted, "
             f"{stats.saved_tracks} saved tracks, "
-            f"{stats.artists_fetched} artists fetched, "
+            f"{stats.artists_upserted} artists upserted, "
             f"{stats.skipped_items} local/unavailable items skipped"
         )
+        if stats.errors:
+            print(f"errors ({len(stats.errors)}):")
+            for line in stats.errors[:10]:
+                print(f"  {line}")
     finally:
         conn.close()
     return 0

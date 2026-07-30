@@ -14,15 +14,26 @@ from typing import Any
 
 import httpx
 
-from pigeonhole_worker.util import chunked
-
 API_BASE = "https://api.spotify.com/v1"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 
 MAX_ATTEMPTS = 5
 RETRYABLE_STATUSES = {429, 500, 502, 503}
-ARTIST_BATCH_SIZE = 50
 PAGE_LIMIT = 50
+
+# A Retry-After beyond this means the dev-mode quota is exhausted, not a burst
+# limit. Fail fast so the (resumable) sync can be re-run later instead of
+# silently sleeping for potentially hours.
+MAX_RETRY_AFTER_SECONDS = 120.0
+
+
+class QuotaExhaustedError(RuntimeError):
+    def __init__(self, retry_after: float) -> None:
+        super().__init__(
+            f"Spotify asked us to wait {retry_after:.0f}s — the dev-mode API quota "
+            "is exhausted. Re-run the sync later; completed playlists are skipped."
+        )
+        self.retry_after = retry_after
 
 
 class SpotifyError(RuntimeError):
@@ -79,6 +90,8 @@ class SpotifyClient:
                 return payload
             if response.status_code in RETRYABLE_STATUSES and attempt < MAX_ATTEMPTS:
                 retry_after = float(response.headers.get("Retry-After", 0) or 0)
+                if retry_after > MAX_RETRY_AFTER_SECONDS:
+                    raise QuotaExhaustedError(retry_after)
                 # Exponential backoff floor so 5xx without Retry-After still waits.
                 self._sleep(max(retry_after, 2 ** (attempt - 1)))
                 continue
@@ -95,24 +108,19 @@ class SpotifyClient:
             # `next` already encodes the query parameters.
             page = self._get(next_url, None)
 
-    # ── endpoints ────────────────────────────────────────────────────────
+    # ── endpoints (Feb-2026 dev-mode surface; verified by live probe) ────
 
     def get_my_playlists(self) -> Iterator[dict[str, Any]]:
         return self._paginate(f"{API_BASE}/me/playlists", {"limit": PAGE_LIMIT})
 
-    def get_playlist_tracks(self, playlist_id: str) -> Iterator[dict[str, Any]]:
+    def get_playlist_items(self, playlist_id: str) -> Iterator[dict[str, Any]]:
+        """Playlist entries. NOTE: /playlists/{id}/tracks returns 403 for
+        dev-mode apps since Feb 2026; /items is the replacement and nests the
+        track under the ``item`` key."""
         return self._paginate(
-            f"{API_BASE}/playlists/{playlist_id}/tracks",
+            f"{API_BASE}/playlists/{playlist_id}/items",
             {"limit": PAGE_LIMIT},
         )
 
     def get_saved_tracks(self) -> Iterator[dict[str, Any]]:
         return self._paginate(f"{API_BASE}/me/tracks", {"limit": PAGE_LIMIT})
-
-    def get_artists(self, artist_ids: list[str]) -> list[dict[str, Any]]:
-        """Fetch artists in batches of 50 (the API maximum per request)."""
-        artists: list[dict[str, Any]] = []
-        for batch in chunked(artist_ids, ARTIST_BATCH_SIZE):
-            payload = self._get(f"{API_BASE}/artists", {"ids": ",".join(batch)})
-            artists.extend(a for a in payload["artists"] if a is not None)
-        return artists

@@ -53,19 +53,20 @@ class PostgresRepository:
         self._conn.commit()
 
     def upsert_tracks(self, tracks: list[TrackRecord]) -> None:
+        # `popularity` stays NULL: the field was removed from the API for
+        # dev-mode apps in Feb 2026.
         with self._conn.cursor() as cur:
             cur.executemany(
                 """
                 INSERT INTO tracks
                     (spotify_id, name, artist_ids, album_name, release_year,
-                     popularity, explicit, duration_ms)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     explicit, duration_ms)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (spotify_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     artist_ids = EXCLUDED.artist_ids,
                     album_name = EXCLUDED.album_name,
                     release_year = EXCLUDED.release_year,
-                    popularity = EXCLUDED.popularity,
                     explicit = EXCLUDED.explicit,
                     duration_ms = EXCLUDED.duration_ms
                 """,
@@ -76,7 +77,6 @@ class PostgresRepository:
                         t.artist_ids,
                         t.album_name,
                         t.release_year,
-                        t.popularity,
                         t.explicit,
                         t.duration_ms,
                     )
@@ -85,9 +85,7 @@ class PostgresRepository:
             )
         self._conn.commit()
 
-    def replace_playlist_tracks(
-        self, playlist_id: str, entries: list[PlaylistTrackRecord]
-    ) -> None:
+    def replace_playlist_tracks(self, playlist_id: str, entries: list[PlaylistTrackRecord]) -> None:
         with self._conn.cursor() as cur:
             cur.execute("DELETE FROM playlist_tracks WHERE playlist_id = %s", (playlist_id,))
             cur.executemany(
@@ -120,31 +118,19 @@ class PostgresRepository:
             )
         self._conn.commit()
 
-    def known_artist_ids(self) -> set[str]:
-        rows = self._conn.execute("SELECT spotify_id FROM artists").fetchall()
-        return {row[0] for row in rows}
-
     def upsert_artists(self, artists: list[dict[str, Any]]) -> None:
+        # Only id + name are available from embedded track data; the API's
+        # genres/popularity fields were removed for dev-mode apps in Feb 2026.
         with self._conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO artists (spotify_id, name, genres, popularity, fetched_at)
-                VALUES (%s, %s, %s, %s, now())
+                INSERT INTO artists (spotify_id, name, fetched_at)
+                VALUES (%s, %s, now())
                 ON CONFLICT (spotify_id) DO UPDATE SET
                     name = EXCLUDED.name,
-                    genres = EXCLUDED.genres,
-                    popularity = EXCLUDED.popularity,
                     fetched_at = now()
                 """,
-                [
-                    (
-                        a["id"],
-                        a.get("name") or "",
-                        a.get("genres") or [],
-                        a.get("popularity"),
-                    )
-                    for a in artists
-                ],
+                [(a["id"], a.get("name") or "") for a in artists],
             )
         self._conn.commit()
 

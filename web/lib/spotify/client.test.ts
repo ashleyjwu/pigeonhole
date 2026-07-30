@@ -26,7 +26,6 @@ const rawTrack = {
     images: [{ url: "https://img/1.jpg" }],
     release_date: "2019-05-01",
   },
-  popularity: 61,
   duration_ms: 201_000,
   explicit: false,
 };
@@ -84,7 +83,7 @@ describe("addTrackToPlaylist", () => {
     expect(snapshot).toBe("snap2");
 
     const [url, init] = vi.mocked(fetchImpl).mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/playlists/pl1/tracks");
+    expect(url).toContain("/playlists/pl1/items");
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({ uris: ["spotify:track:t1"] });
   });

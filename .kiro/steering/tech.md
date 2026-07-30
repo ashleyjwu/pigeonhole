@@ -19,22 +19,35 @@
 - Free backends sleep and cold-start; handle with loading states and a keep-warm
   cron. Treat this as a known, deliberate tradeoff.
 
-## Spotify Web API constraints (CRITICAL — verified)
-Since the 2024-11-27 changes, **new apps CANNOT use**: audio-features, audio-analysis,
-recommendations, related-artists, featured/category playlists, and the 30-second
-`preview_url`. **Do not design features on these.**
+## Spotify Web API constraints (CRITICAL — verified by live probe 2026-07-30)
+Two rounds of restrictions apply to this app (created July 2026, Development Mode):
 
-Still available and used by pigeonhole: user profile; playlists (read + create/modify);
-playlist tracks; saved tracks; top tracks/artists; recently-played; artists (incl.
-genres); search; currently-playing (Premium). Dev Mode allows ~25 users; the app owner
-must have Premium.
+2024-11-27 removals: audio-features, audio-analysis, recommendations,
+related-artists, featured/category playlists, 30-second `preview_url`.
+
+Feb-2026 dev-mode changes (verified against the live API with our token):
+- `GET /playlists/{id}/tracks` returns **403** -> use `GET /playlists/{id}/items`;
+  entries nest the track under `item` (saved tracks still use `track`)
+- Playlist objects: `tracks` field renamed to `items` (`items.total`)
+- `GET /artists?ids=` (batch) returns **403**; `GET /artists/{id}` works but has
+  **no `genres`** field. Artist data comes from (id, name) embedded in tracks.
+- Track objects have **no `popularity`** field
+- Playlist writes use `POST/PUT/DELETE /playlists/{id}/items`
+- Dev Mode: max **5 users**, owner must keep Premium, quotas per developer account
+
+Still available and verified working: `/me`, `/me/playlists`,
+`/playlists/{id}/items`, `/me/tracks`, `/me/player/currently-playing`, `/search`,
+playlist item writes. **Do not design features on genres, popularity, or any
+removed endpoint.** Probe the live API before trusting docs or training data.
 
 ## Key decisions
 - Classify playlists by **contents, not names**.
-- **Suggestion engine v1 = content features** (artist overlap, genre distribution, era,
-  popularity). Embeddings (track2vec from playlist co-occurrence) are an **experiment**
-  validated against the eval harness, not a foundational assumption — the corpus is
-  small (~250 playlists).
+- **Suggestion engine v1 = content features from available data**: artist overlap
+  (primary signal), track co-occurrence across playlists, era (release_year), album
+  and artist-name signals. Genre and popularity are NOT available (Feb-2026 API).
+  Embeddings (track2vec from playlist co-occurrence) are an **experiment** validated
+  against the eval harness — co-occurrence is now more important, not less, since it
+  partially substitutes for the missing genre signal.
 - **Compute split:** the **worker** owns batch/offline work (sync, playlist profiles,
   embeddings, re-ranker training); the **web** app owns low-latency **online scoring**
   (compare one track's features to the ~250 precomputed playlist profiles in-process,

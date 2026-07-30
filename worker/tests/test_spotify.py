@@ -8,6 +8,7 @@ import pytest
 
 from pigeonhole_worker.spotify import (
     API_BASE,
+    QuotaExhaustedError,
     SpotifyClient,
     SpotifyError,
     refresh_access_token,
@@ -65,6 +66,16 @@ def test_auth_header_sent() -> None:
 # ── retry / backoff ──────────────────────────────────────────────────────
 
 
+def test_huge_retry_after_raises_quota_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(429, {}, headers={"Retry-After": "21600"})
+
+    client, sleeps = make_client(httpx.MockTransport(handler))
+    with pytest.raises(QuotaExhaustedError, match="quota"):
+        list(client.get_my_playlists())
+    assert sleeps == []  # fail fast, never sleep
+
+
 def test_429_honors_retry_after_then_succeeds() -> None:
     attempts = {"n": 0}
 
@@ -116,29 +127,17 @@ def test_non_retryable_error_raises_immediately() -> None:
     assert sleeps == []
 
 
-# ── artist batching ──────────────────────────────────────────────────────
+# ── playlist items endpoint (Feb-2026 path) ─────────────────────────────
 
 
-def test_artists_fetched_in_batches_of_50() -> None:
-    batch_sizes: list[int] = []
-
+def test_playlist_items_uses_new_endpoint() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        ids = request.url.params["ids"].split(",")
-        batch_sizes.append(len(ids))
-        return json_response(200, {"artists": [{"id": i} for i in ids]})
+        assert request.url.path == "/v1/playlists/p1/items"
+        return json_response(200, page([{"item": {"id": "t1"}}], None))
 
     client, _ = make_client(httpx.MockTransport(handler))
-    artists = client.get_artists([f"artist{i}" for i in range(120)])
-    assert len(artists) == 120
-    assert batch_sizes == [50, 50, 20]
-
-
-def test_artists_drops_null_entries() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return json_response(200, {"artists": [{"id": "a"}, None]})
-
-    client, _ = make_client(httpx.MockTransport(handler))
-    assert client.get_artists(["a", "gone"]) == [{"id": "a"}]
+    items = list(client.get_playlist_items("p1"))
+    assert items == [{"item": {"id": "t1"}}]
 
 
 # ── token refresh ────────────────────────────────────────────────────────
