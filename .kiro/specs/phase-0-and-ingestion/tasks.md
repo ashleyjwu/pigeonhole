@@ -13,13 +13,15 @@ Legend: `[x]` done · `[ ]` todo · **(checkpoint)** needs a human step.
   _Requirements: 1.1, 1.2_
 
 ## 1. Persistence schema (worker owns migrations)
-- [ ] 1.1 Create `worker/` package: `pyproject.toml` with ruff, mypy, pytest configured
-- [ ] 1.2 DB connection helper (psycopg) reading `DATABASE_URL`
-- [ ] 1.3 Migration `0001_init.sql`: enable pgvector; create users, spotify_accounts,
+- [x] 1.1 Create `worker/` package: `pyproject.toml` with ruff, mypy, pytest configured
+- [x] 1.2 DB connection helper (psycopg) reading `DATABASE_URL`
+- [x] 1.3 Migration `0001_init.sql`: enable pgvector; create users, spotify_accounts,
   artists, tracks, playlists, playlist_tracks, saved_tracks
-- [ ] 1.4 Migration `0002_profiles.sql`: playlist_profiles, feedback_events
-- [ ] 1.5 Idempotent migration runner + `schema_migrations` table; pytest for re-run
+- [x] 1.4 Migration `0002_profiles.sql`: playlist_profiles, feedback_events
+- [x] 1.5 Idempotent migration runner + `schema_migrations` table; pytest for re-run
   safety
+- [ ] 1.6 **(checkpoint)** Apply migrations to the live Neon database
+  (`python -m pigeonhole_worker.migrate`) with user approval
   _Requirements: 5.1, 5.2, 5.3_
 
 ## 2. Spotify authentication (web)
