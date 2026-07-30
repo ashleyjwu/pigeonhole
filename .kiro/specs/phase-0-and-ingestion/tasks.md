@@ -41,12 +41,15 @@ Legend: `[x]` done · `[ ]` todo · **(checkpoint)** needs a human step.
   _Requirements: 3.1, 3.4_
 
 ## 4. Ingestion / sync (worker)
-- [ ] 4.1 Full sync: playlists -> tracks -> artist genres -> saved tracks; idempotent
+- [x] 4.1 Full sync: playlists -> tracks -> artist genres -> saved tracks; idempotent
   upserts
-- [ ] 4.2 Incremental sync via `snapshot_id` (skip unchanged playlists)
-- [ ] 4.3 Redis queue + sync job; web enqueues it after login
-- [ ] 4.4 429 / `Retry-After` handling with resumable progress
-- [ ] 4.5 pytest for full + incremental paths against fixtures
+- [x] 4.2 Incremental sync via `snapshot_id` (skip unchanged playlists)
+- [ ] 4.3 Redis queue + sync job; web enqueues it after login (deferred: CLI runner
+  first, queue when the web flow needs it)
+- [x] 4.4 429 / `Retry-After` handling with resumable progress
+- [x] 4.5 pytest for full + incremental paths against fixtures
+- [ ] 4.6 **(checkpoint)** First real sync of the owner's library via
+  `python -m pigeonhole_worker.run`
   _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
 ## 5. Offline fixtures
