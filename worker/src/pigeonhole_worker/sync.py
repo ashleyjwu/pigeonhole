@@ -154,14 +154,15 @@ def run_sync(
         stats.playlists_seen += 1
         playlist_id = playlist["id"]
         is_owned = (playlist.get("owner") or {}).get("id") == user_spotify_id
-        repo.upsert_playlist(user_id, playlist, is_owned)
 
-        # Dev-mode apps get 403 reading items of playlists the user merely
-        # follows — and only owned/collaborative playlists can be added to,
-        # so foreign playlists are not suggestion targets anyway.
+        # Foreign (followed, non-collaborative) playlists are not ingested at
+        # all: they can't be add targets, and dev-mode apps get 403 reading
+        # their items anyway.
         if not is_owned and not playlist.get("collaborative"):
             stats.playlists_foreign += 1
             continue
+
+        repo.upsert_playlist(user_id, playlist, is_owned)
 
         if stored_snapshots.get(playlist_id) == playlist["snapshot_id"]:
             stats.playlists_skipped += 1

@@ -175,7 +175,7 @@ def test_full_sync_persists_everything() -> None:
     assert repo.synced_at is not None
 
 
-def test_foreign_playlists_are_recorded_but_not_fetched() -> None:
+def test_foreign_playlists_are_not_ingested_at_all() -> None:
     spotify = FakeSpotify(
         playlists=[
             playlist_payload("mine", "snap1"),
@@ -188,7 +188,7 @@ def test_foreign_playlists_are_recorded_but_not_fetched() -> None:
 
     assert stats.playlists_foreign == 1
     assert spotify.item_fetches == ["mine"]  # never touched the followed one
-    assert "followed" in repo.playlists  # metadata still recorded
+    assert "followed" not in repo.playlists  # no metadata row either
     assert "followed" not in repo.playlist_tracks
 
 
