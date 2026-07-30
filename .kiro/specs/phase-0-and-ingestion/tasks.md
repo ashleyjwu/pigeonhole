@@ -35,9 +35,9 @@ Legend: `[x]` done · `[ ]` todo · **(checkpoint)** needs a human step.
   _Requirements: 2.1, 2.2, 2.3, 2.4_
 
 ## 3. Spotify client + types
-- [ ] 3.1 TS client (`web/lib/spotify`): typed wrappers, pagination, 429/backoff
-- [ ] 3.2 Python client (worker): same endpoints for batch sync + token refresh
-- [ ] 3.3 Fixture-based unit tests for both (no network)
+- [x] 3.1 TS client (`web/lib/spotify`): typed wrappers, pagination, 429/backoff
+- [x] 3.2 Python client (worker): same endpoints for batch sync + token refresh
+- [x] 3.3 Fixture-based unit tests for both (no network)
   _Requirements: 3.1, 3.4_
 
 ## 4. Ingestion / sync (worker)
