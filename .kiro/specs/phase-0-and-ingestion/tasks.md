@@ -30,7 +30,7 @@ Legend: `[x]` done · `[ ]` todo · **(checkpoint)** needs a human step.
 - [x] 2.2 AES-256-GCM crypto module (`web/lib/crypto`) + unit tests (round-trip, tamper)
 - [x] 2.3 Persist user + encrypted tokens to Postgres on sign-in
 - [x] 2.4 Server-side access-token refresh on expiry; tokens never sent to the client
-- [ ] 2.5 **(checkpoint)** End-to-end login test: user signs in via Spotify at
+- [x] 2.5 **(checkpoint)** End-to-end login test: user signs in via Spotify at
   http://127.0.0.1:3000 and rows land in users/spotify_accounts
   _Requirements: 2.1, 2.2, 2.3, 2.4_
 
