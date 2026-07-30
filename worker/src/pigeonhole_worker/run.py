@@ -1,8 +1,13 @@
 """Run a library sync for a user.
 
 Usage:
-    python -m pigeonhole_worker.run           # sync the only (or first) user
+    python -m pigeonhole_worker.run                    # one attempt
+    python -m pigeonhole_worker.run --until-complete   # retry across quota resets
     python -m pigeonhole_worker.run SPOTIFY_ID
+
+With --until-complete, a QuotaExhaustedError makes the runner sleep for the
+exact Retry-After Spotify sent (plus a buffer) and try again, resuming where
+the previous attempt left off, until a full sync completes.
 
 Reads DATABASE_URL, SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, and
 TOKEN_ENCRYPTION_KEY from the environment / worker/.env. Spotify-side access
@@ -11,9 +16,11 @@ is read-only; writes go to our Postgres.
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -22,8 +29,12 @@ import psycopg
 from pigeonhole_worker.crypto import decrypt_token, encrypt_token, key_from_env
 from pigeonhole_worker.db import connect
 from pigeonhole_worker.repo import PostgresRepository
-from pigeonhole_worker.spotify import SpotifyClient, refresh_access_token
-from pigeonhole_worker.sync import run_sync
+from pigeonhole_worker.spotify import QuotaExhaustedError, SpotifyClient, refresh_access_token
+from pigeonhole_worker.sync import SyncStats, run_sync
+
+# Extra wait beyond Spotify's Retry-After, so we never retry a hair early.
+QUOTA_BUFFER_SECONDS = 120.0
+MAX_QUOTA_RETRIES = 14  # ~2 weeks of daily windows, a generous ceiling
 
 
 def _load_user(conn: psycopg.Connection[Any], spotify_id: str | None) -> tuple[str, str]:
@@ -72,14 +83,12 @@ def _fresh_access_token(conn: psycopg.Connection[Any], user_id: str) -> str:
     return access_token
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = list(argv if argv is not None else sys.argv[1:])
-    spotify_id = args[0] if args else None
-
+def sync_once(spotify_id: str | None) -> SyncStats:
+    """One sync attempt. Raises QuotaExhaustedError if the quota is spent."""
     conn = connect()
     try:
         user_id, user_spotify_id = _load_user(conn, spotify_id)
-        print(f"Syncing library for {user_spotify_id} ({user_id})")
+        print(f"[{datetime.now(UTC):%Y-%m-%d %H:%M:%S}] Syncing library for {user_spotify_id}")
         access_token = _fresh_access_token(conn, user_id)
         stats = run_sync(
             PostgresRepository(conn), SpotifyClient(access_token), user_id, user_spotify_id
@@ -97,8 +106,53 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"errors ({len(stats.errors)}):")
             for line in stats.errors[:10]:
                 print(f"  {line}")
+        return stats
     finally:
         conn.close()
+
+
+def run_until_complete(
+    attempt: Callable[[], SyncStats],
+    sleep: Callable[[float], None] = time.sleep,
+    max_retries: int = MAX_QUOTA_RETRIES,
+) -> SyncStats:
+    """Run ``attempt`` until it completes, sleeping through quota exhaustion.
+
+    Each retry resumes where the last stopped (synced playlists are skipped by
+    snapshot), so total progress is monotonic across attempts.
+    """
+    for retry in range(max_retries + 1):
+        try:
+            return attempt()
+        except QuotaExhaustedError as error:
+            if retry == max_retries:
+                raise
+            wait = error.retry_after + QUOTA_BUFFER_SECONDS
+            resume_at = datetime.now(UTC) + timedelta(seconds=wait)
+            print(
+                f"[{datetime.now(UTC):%Y-%m-%d %H:%M:%S}] quota exhausted; "
+                f"sleeping {wait / 3600:.1f}h, resuming ~{resume_at:%Y-%m-%d %H:%M} UTC "
+                f"(attempt {retry + 1}/{max_retries})",
+                flush=True,
+            )
+            sleep(wait)
+    raise AssertionError("unreachable")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Sync a user's Spotify library.")
+    parser.add_argument("spotify_id", nargs="?", default=None)
+    parser.add_argument(
+        "--until-complete",
+        action="store_true",
+        help="Keep retrying across quota resets until a full sync completes.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.until_complete:
+        run_until_complete(lambda: sync_once(args.spotify_id))
+    else:
+        sync_once(args.spotify_id)
     return 0
 
 
