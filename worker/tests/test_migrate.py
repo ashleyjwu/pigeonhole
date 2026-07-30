@@ -93,10 +93,13 @@ def test_discovery_rejects_empty_file(tmp_path: Path) -> None:
 def test_repo_migrations_are_valid() -> None:
     """The real migration files must always be discoverable and well-formed."""
     migrations = discover_migrations(MIGRATIONS_DIR)
-    assert [m.version for m in migrations] == [1, 2]
-    assert migrations[0].name == "init"
-    assert migrations[1].name == "profiles"
-    assert "CREATE EXTENSION IF NOT EXISTS vector" in migrations[0].sql
+    versions = [m.version for m in migrations]
+    # Versions are contiguous starting at 1 (no gaps/dupes).
+    assert versions == list(range(1, len(migrations) + 1))
+    by_version = {m.version: m for m in migrations}
+    assert by_version[1].name == "init"
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in by_version[1].sql
+    assert by_version[2].name == "profiles"
 
 
 # ── application ──────────────────────────────────────────────────────────────
