@@ -7,8 +7,8 @@ Legend: `[x]` done · `[ ]` todo · **(checkpoint)** needs a human step.
 - [x] 0.2 Next.js 16 + TS (strict) + Tailwind + ESLint + Vitest; green baseline test
 - [x] 0.3 GitHub Actions CI (web job); worker job prepared but disabled
 - [x] 0.4 Steering files + verification hooks
-- [ ] 0.5 **(checkpoint)** Upgrade dev machine to Node >= 20.9 and Python >= 3.11
-- [ ] 0.6 **(checkpoint)** `cd web && npm install` on Node 20 to sync the lockfile and
+- [x] 0.5 **(checkpoint)** Upgrade dev machine to Node >= 20.9 and Python >= 3.11
+- [x] 0.6 **(checkpoint)** `cd web && npm install` on Node 20 to sync the lockfile and
   install Vitest; confirm `npm run verify` and `npm run build` pass
   _Requirements: 1.1, 1.2_
 
@@ -20,7 +20,7 @@ Legend: `[x]` done · `[ ]` todo · **(checkpoint)** needs a human step.
 - [x] 1.4 Migration `0002_profiles.sql`: playlist_profiles, feedback_events
 - [x] 1.5 Idempotent migration runner + `schema_migrations` table; pytest for re-run
   safety
-- [ ] 1.6 **(checkpoint)** Apply migrations to the live Neon database
+- [x] 1.6 **(checkpoint)** Apply migrations to the live Neon database
   (`python -m pigeonhole_worker.migrate`) with user approval
   _Requirements: 5.1, 5.2, 5.3_
 
