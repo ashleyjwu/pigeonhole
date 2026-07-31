@@ -92,6 +92,30 @@ def test_gives_up_after_max_attempts() -> None:
         client.get_artist_top_tags("X")
 
 
+def test_retries_network_timeout_then_succeeds() -> None:
+    attempts = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise httpx.ReadTimeout("timed out")
+        return json_response(200, toptags_payload([{"name": "indie", "count": "5"}]))
+
+    client, sleeps = make_client(handler)
+    assert client.get_artist_top_tags("X") == [("indie", 5)]
+    assert attempts["n"] == 2
+    assert sleeps[0] == 1.0
+
+
+def test_gives_up_after_repeated_network_timeouts() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("timed out")
+
+    client, _ = make_client(handler)
+    with pytest.raises(LastFmError, match="network error"):
+        client.get_artist_top_tags("X")
+
+
 def test_self_throttles_between_successful_calls() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return json_response(200, toptags_payload([]))

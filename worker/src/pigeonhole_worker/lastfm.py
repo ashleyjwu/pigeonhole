@@ -63,7 +63,17 @@ class LastFmClient:
             "autocorrect": "1",  # tolerate minor name variants/typos
         }
         for attempt in range(1, MAX_ATTEMPTS + 1):
-            response = self._http.get(API_BASE, params=params)
+            try:
+                response = self._http.get(API_BASE, params=params)
+            except httpx.TransportError as error:
+                # Network-level failure (timeout, connection reset, DNS...) —
+                # no status code to check, so retry unconditionally up to the
+                # attempt cap rather than letting it crash the whole batch.
+                if attempt < MAX_ATTEMPTS:
+                    self._sleep(2 ** (attempt - 1))
+                    continue
+                msg = f"network error after {MAX_ATTEMPTS} attempts: {error}"
+                raise LastFmError(0, msg) from error
             if response.status_code == 200:
                 payload: dict[str, Any] = response.json()
                 if "error" in payload:
