@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SpotifyApiError, SpotifyClient } from "./client";
+import { SpotifyApiError, SpotifyClient, SpotifyQuotaError } from "./client";
 
 const noSleep = async () => {};
 
@@ -109,6 +109,20 @@ describe("retry behavior", () => {
   it("throws SpotifyApiError on non-retryable status", async () => {
     const { client } = clientWith([jsonResponse(403, { error: "forbidden" })]);
     await expect(client.searchTracks("x")).rejects.toThrow(SpotifyApiError);
+  });
+
+  it("throws SpotifyQuotaError immediately on a huge Retry-After", async () => {
+    const sleeps: number[] = [];
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(429, {}, { "Retry-After": "82000" }),
+    ) as unknown as typeof fetch;
+    const client = new SpotifyClient("token", {
+      fetchImpl,
+      sleep: async (ms) => void sleeps.push(ms),
+    });
+    await expect(client.searchTracks("x")).rejects.toThrow(SpotifyQuotaError);
+    expect(sleeps).toEqual([]); // fail fast, never sleep
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("gives up after max attempts", async () => {

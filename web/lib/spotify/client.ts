@@ -11,12 +11,25 @@ const API_BASE = "https://api.spotify.com/v1";
 const MAX_ATTEMPTS = 5;
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503]);
 
+/** A Retry-After beyond this means the dev-mode quota is exhausted; fail fast
+ *  instead of sleeping inside a request handler. Mirrors the Python client. */
+const MAX_RETRY_AFTER_MS = 120_000;
+
 export class SpotifyApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
   ) {
     super(`Spotify API error ${status}: ${message}`);
+  }
+}
+
+export class SpotifyQuotaError extends Error {
+  constructor(public readonly retryAfterSeconds: number) {
+    super(
+      `Spotify dev-mode API quota exhausted (asked to wait ${retryAfterSeconds}s). ` +
+        "Try again after the quota window resets.",
+    );
   }
 }
 
@@ -98,6 +111,9 @@ export class SpotifyClient {
       }
       if (RETRYABLE_STATUSES.has(response.status) && attempt < MAX_ATTEMPTS) {
         const retryAfterSec = Number(response.headers.get("Retry-After") ?? 0);
+        if (retryAfterSec * 1000 > MAX_RETRY_AFTER_MS) {
+          throw new SpotifyQuotaError(retryAfterSec);
+        }
         const backoffMs = Math.max(retryAfterSec * 1000, 2 ** (attempt - 1) * 1000);
         await this.sleep(backoffMs);
         continue;
