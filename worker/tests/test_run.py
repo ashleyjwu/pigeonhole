@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from pigeonhole_worker.run import QUOTA_BUFFER_SECONDS, run_until_complete
+from pigeonhole_worker.run import (
+    QUOTA_BUFFER_SECONDS,
+    run_until_complete,
+    should_recompute_profiles,
+)
 from pigeonhole_worker.spotify import QuotaExhaustedError
 from pigeonhole_worker.sync import SyncStats
 
@@ -50,3 +54,14 @@ def test_non_quota_errors_propagate_immediately() -> None:
     with pytest.raises(RuntimeError, match="db down"):
         run_until_complete(attempt, sleep=sleeps.append)
     assert sleeps == []
+
+
+def test_should_recompute_profiles_when_playlists_changed() -> None:
+    assert should_recompute_profiles(SyncStats(playlists_synced=1)) is True
+    assert should_recompute_profiles(SyncStats(playlists_synced=231)) is True
+
+
+def test_should_not_recompute_profiles_on_a_no_op_sync() -> None:
+    # Everything unchanged: nothing synced, only skipped/foreign playlists.
+    stats = SyncStats(playlists_synced=0, playlists_skipped=10, playlists_foreign=5)
+    assert should_recompute_profiles(stats) is False

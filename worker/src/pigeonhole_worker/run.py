@@ -28,6 +28,7 @@ import psycopg
 
 from pigeonhole_worker.crypto import decrypt_token, encrypt_token, key_from_env
 from pigeonhole_worker.db import connect
+from pigeonhole_worker.profiles import compute_all
 from pigeonhole_worker.repo import PostgresRepository
 from pigeonhole_worker.spotify import QuotaExhaustedError, SpotifyClient, refresh_access_token
 from pigeonhole_worker.sync import SyncStats, run_sync
@@ -83,6 +84,13 @@ def _fresh_access_token(conn: psycopg.Connection[Any], user_id: str) -> str:
     return access_token
 
 
+def should_recompute_profiles(stats: SyncStats) -> bool:
+    """Profiles only depend on playlist_tracks contents, so recomputation is
+    only worth its cost when at least one playlist's tracks actually changed
+    this run (skips the no-op case where every playlist was unchanged)."""
+    return stats.playlists_synced > 0
+
+
 def sync_once(spotify_id: str | None) -> SyncStats:
     """One sync attempt. Raises QuotaExhaustedError if the quota is spent."""
     conn = connect()
@@ -106,6 +114,15 @@ def sync_once(spotify_id: str | None) -> SyncStats:
             print(f"errors ({len(stats.errors)}):")
             for line in stats.errors[:10]:
                 print(f"  {line}")
+
+        # Keep playlist_profiles in sync with what was just ingested — the
+        # scorer only sees playlists that have a profile row, so a sync
+        # without this step leaves newly-synced playlists invisible to
+        # suggestions (a real bug we hit: 231 playlists synced, 10 stale
+        # profiles left over from before the backfill).
+        if should_recompute_profiles(stats):
+            profile_count = compute_all(conn)
+            print(f"recomputed profiles for {profile_count} playlists")
         return stats
     finally:
         conn.close()
