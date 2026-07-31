@@ -1,5 +1,5 @@
 import { auth, signIn, signOut } from "@/auth";
-import { Hero } from "@/components/hero";
+import { HomeTabs } from "@/components/home-tabs";
 
 export default async function Home() {
   const session = await auth();
@@ -29,7 +29,7 @@ export default async function Home() {
       </header>
 
       {session?.user ? (
-        <Hero />
+        <HomeTabs />
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
           <p className="max-w-sm text-neutral-400">

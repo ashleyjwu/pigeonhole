@@ -1,10 +1,13 @@
 /**
- * Compose the hero-flow payload: suggestions for a track, annotated with
- * whether each suggested playlist already contains it.
+ * Compose the suggestion payload shared by the hero (now-playing) and search
+ * flows: score a track against a user's profiles, then annotate with
+ * membership so the UI can show "already in playlist" instead of "Add".
  */
 
+import { loadPlaylistProfiles } from "@/lib/db/profiles";
+import { playlistsContainingTrack } from "@/lib/db/library";
 import { suggestPlaylists, type SuggestOptions } from "@/lib/scoring/score";
-import type { PlaylistProfile, Suggestion } from "@/lib/scoring/types";
+import type { Suggestion } from "@/lib/scoring/types";
 import type { TrackSummary } from "@/lib/spotify/client";
 
 export interface AnnotatedSuggestion extends Suggestion {
@@ -22,11 +25,17 @@ export function annotateSuggestions(
   }));
 }
 
-export function suggestForTrack(
+/** Load this user's profiles, score, and annotate — the one call both
+ *  /api/now-playing and /api/search need. */
+export async function getSuggestionsForTrack(
+  userId: string,
   track: TrackSummary,
-  profiles: PlaylistProfile[],
-  memberPlaylistIds: ReadonlySet<string>,
   options: SuggestOptions = {},
-): AnnotatedSuggestion[] {
-  return annotateSuggestions(suggestPlaylists(track, profiles, options), memberPlaylistIds);
+): Promise<AnnotatedSuggestion[]> {
+  const profiles = await loadPlaylistProfiles(userId);
+  const members = await playlistsContainingTrack(
+    track.id,
+    profiles.map((p) => p.playlistId),
+  );
+  return annotateSuggestions(suggestPlaylists(track, profiles, options), members);
 }

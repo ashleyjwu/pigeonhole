@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
-import { playlistsContainingTrack } from "@/lib/db/library";
-import { loadPlaylistProfiles } from "@/lib/db/profiles";
 import { SpotifyClient, SpotifyQuotaError, type TrackSummary } from "@/lib/spotify/client";
 import { getValidAccessToken } from "@/lib/spotify/tokens";
-import { suggestForTrack, type AnnotatedSuggestion } from "@/lib/suggest";
+import { getSuggestionsForTrack, type AnnotatedSuggestion } from "@/lib/suggest";
 
 export type NowPlayingPayload =
   | { state: "unauthenticated" }
@@ -26,12 +24,7 @@ export async function GET(): Promise<NextResponse<NowPlayingPayload>> {
       return NextResponse.json({ state: "nothing-playing" });
     }
 
-    const profiles = await loadPlaylistProfiles();
-    const members = await playlistsContainingTrack(
-      track.id,
-      profiles.map((p) => p.playlistId),
-    );
-    const suggestions = suggestForTrack(track, profiles, members, { limit: 3 });
+    const suggestions = await getSuggestionsForTrack(session.userId, track, { limit: 3 });
     return NextResponse.json({ state: "playing", track, suggestions });
   } catch (error) {
     if (error instanceof SpotifyQuotaError) {

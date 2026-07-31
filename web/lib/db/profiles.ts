@@ -31,13 +31,18 @@ export function mapProfileRow(row: ProfileRow): PlaylistProfile {
   };
 }
 
-export async function loadPlaylistProfiles(): Promise<PlaylistProfile[]> {
+/** Profiles for one user's playlists. Scoped by owner_user_id — required now
+ *  that dev mode allows multiple signed-in users, so one user's suggestions
+ *  never leak another's library. */
+export async function loadPlaylistProfiles(userId: string): Promise<PlaylistProfile[]> {
   const result = await getPool().query<ProfileRow>(
     `SELECT p.spotify_id, p.name, pr.artist_weights, pr.era_stats,
             (SELECT count(*) FROM playlist_tracks pt
               WHERE pt.playlist_id = p.spotify_id) AS track_count
      FROM playlists p
-     JOIN playlist_profiles pr ON pr.playlist_id = p.spotify_id`,
+     JOIN playlist_profiles pr ON pr.playlist_id = p.spotify_id
+     WHERE p.owner_user_id = $1`,
+    [userId],
   );
   return result.rows.map(mapProfileRow);
 }

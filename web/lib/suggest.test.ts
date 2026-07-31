@@ -1,9 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { PlaylistProfile } from "@/lib/scoring/types";
 import type { TrackSummary } from "@/lib/spotify/client";
 
-import { annotateSuggestions, suggestForTrack } from "./suggest";
+import { annotateSuggestions, getSuggestionsForTrack } from "./suggest";
+
+vi.mock("@/lib/db/profiles", () => ({ loadPlaylistProfiles: vi.fn() }));
+vi.mock("@/lib/db/library", () => ({ playlistsContainingTrack: vi.fn() }));
 
 const track: TrackSummary = {
   id: "t1",
@@ -40,14 +43,19 @@ describe("annotateSuggestions", () => {
   });
 });
 
-describe("suggestForTrack", () => {
-  it("ranks, limits, and annotates in one pass", () => {
-    const suggestions = suggestForTrack(
-      track,
-      [profile("weak", { a1: 0.1 }), profile("strong", { a1: 0.9 }), profile("none", {})],
-      new Set(["strong"]),
-      { limit: 2 },
-    );
+describe("getSuggestionsForTrack", () => {
+  it("loads this user's profiles, scores, and annotates membership", async () => {
+    const { loadPlaylistProfiles } = await import("@/lib/db/profiles");
+    const { playlistsContainingTrack } = await import("@/lib/db/library");
+    vi.mocked(loadPlaylistProfiles).mockResolvedValue([
+      profile("weak", { a1: 0.1 }),
+      profile("strong", { a1: 0.9 }),
+    ]);
+    vi.mocked(playlistsContainingTrack).mockResolvedValue(new Set(["strong"]));
+
+    const suggestions = await getSuggestionsForTrack("user-1", track, { limit: 2 });
+
+    expect(loadPlaylistProfiles).toHaveBeenCalledWith("user-1");
     expect(suggestions.map((s) => s.playlistId)).toEqual(["strong", "weak"]);
     expect(suggestions[0]?.isMember).toBe(true);
     expect(suggestions[1]?.isMember).toBe(false);
