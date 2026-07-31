@@ -76,14 +76,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     from pigeonhole_worker.db import connect
     from pigeonhole_worker.repo import PostgresRepository
 
+    # connect() loads worker/.env as a side effect (see db.py: database_url())
+    # before opening the connection, so LASTFM_API_KEY is only guaranteed to
+    # be populated after this call — check it afterwards, not before.
+    conn = connect()
     api_key = os.environ.get("LASTFM_API_KEY")
     if not api_key:
+        conn.close()
         raise SystemExit(
             "LASTFM_API_KEY is not set. Get a free key at "
             "https://www.last.fm/api/account/create and add it to worker/.env"
         )
-
-    conn = connect()
     try:
         stats = enrich_genres(PostgresRepository(conn), LastFmClient(api_key), args.limit)
         print(
