@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from pigeonhole_worker.sync import PlaylistTrackRecord, TrackRecord
 
@@ -138,5 +139,28 @@ class PostgresRepository:
         self._conn.execute(
             "UPDATE users SET last_synced_at = %s WHERE id = %s",
             (at, user_id),
+        )
+        self._conn.commit()
+
+    def artists_needing_genre_tags(self, limit: int) -> list[tuple[str, str]]:
+        """(spotify_id, name) for artists never enriched, oldest name first."""
+        rows = self._conn.execute(
+            """
+            SELECT spotify_id, name FROM artists
+            WHERE genre_fetched_at IS NULL AND name <> ''
+            ORDER BY spotify_id
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def store_genre_tags(self, artist_id: str, tags: dict[str, float]) -> None:
+        self._conn.execute(
+            """
+            UPDATE artists SET genre_tags = %s, genre_fetched_at = now()
+            WHERE spotify_id = %s
+            """,
+            (Jsonb(tags) if tags else Jsonb({}), artist_id),
         )
         self._conn.commit()
