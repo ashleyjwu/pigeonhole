@@ -29,6 +29,9 @@ export async function addTrackAction(
     return { ok: true };
   } catch (error) {
     if (error instanceof SpotifyQuotaError) {
+      console.warn(
+        `addTrackAction: Spotify quota exhausted (retry after ${error.retryAfterSeconds}s)`,
+      );
       return { ok: false, error: "quota-exhausted" };
     }
     console.error("addTrackAction failed", error);

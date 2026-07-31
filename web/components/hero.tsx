@@ -10,7 +10,7 @@ import type { TrackSummary } from "@/lib/spotify/client";
 
 const POLL_INTERVAL_MS = 10_000;
 
-type AddState = "idle" | "adding" | "added" | "error";
+type AddState = "idle" | "adding" | "added" | "error" | "quota";
 
 export function Hero() {
   const [payload, setPayload] = useState<NowPlayingPayload | null>(null);
@@ -55,7 +55,12 @@ export function Hero() {
   async function handleAdd(playlistId: string, track: TrackSummary) {
     setAddStates((s) => ({ ...s, [playlistId]: "adding" }));
     const result: AddResult = await addTrackAction(playlistId, track);
-    setAddStates((s) => ({ ...s, [playlistId]: result.ok ? "added" : "error" }));
+    const next: AddState = result.ok
+      ? "added"
+      : result.error === "quota-exhausted"
+        ? "quota"
+        : "error";
+    setAddStates((s) => ({ ...s, [playlistId]: next }));
   }
 
   if (payload === null) {
@@ -111,6 +116,12 @@ export function Hero() {
         <p className="text-xs uppercase tracking-widest text-neutral-500">
           File it under
         </p>
+        {Object.values(addStates).includes("quota") && (
+          <p className="rounded-lg bg-amber-900/20 px-3 py-2 text-xs text-amber-300">
+            Spotify&apos;s write quota is used up for now. Adds will work again
+            when the daily window resets.
+          </p>
+        )}
         {suggestions.length === 0 ? (
           <p className="text-sm text-neutral-400">
             No playlist looks like a fit for this one yet.
@@ -138,9 +149,11 @@ export function Hero() {
                       ? "rounded-full bg-neutral-800 px-4 py-1.5 text-sm text-green-400"
                       : state === "adding"
                         ? "rounded-full bg-neutral-800 px-4 py-1.5 text-sm text-neutral-400"
-                        : state === "error"
-                          ? "rounded-full bg-red-900/40 px-4 py-1.5 text-sm text-red-300 hover:bg-red-900/60"
-                          : "rounded-full bg-green-500 px-4 py-1.5 text-sm font-semibold text-black transition hover:bg-green-400"
+                        : state === "quota"
+                          ? "rounded-full bg-amber-900/40 px-4 py-1.5 text-sm text-amber-300"
+                          : state === "error"
+                            ? "rounded-full bg-red-900/40 px-4 py-1.5 text-sm text-red-300 hover:bg-red-900/60"
+                            : "rounded-full bg-green-500 px-4 py-1.5 text-sm font-semibold text-black transition hover:bg-green-400"
                   }
                 >
                   {state === "added"
@@ -149,9 +162,11 @@ export function Hero() {
                       : "Added"
                     : state === "adding"
                       ? "Adding..."
-                      : state === "error"
-                        ? "Retry"
-                        : "Add"}
+                      : state === "quota"
+                        ? "Quota hit"
+                        : state === "error"
+                          ? "Retry"
+                          : "Add"}
                 </button>
               </div>
             );
