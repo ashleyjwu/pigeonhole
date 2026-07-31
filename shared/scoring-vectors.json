@@ -1,0 +1,127 @@
+{
+  "description": "Shared scoring test vectors. Consumed by BOTH worker/tests/test_scoring.py and web/lib/scoring/score.test.ts to keep the two scorer implementations behavior-identical. Regenerate only when the scoring algorithm intentionally changes.",
+  "cases": [
+    {
+      "name": "artist and era both present",
+      "track": {
+        "artistIds": [
+          "a1"
+        ],
+        "releaseYear": 2018
+      },
+      "profile": {
+        "artistWeights": {
+          "a1": 0.4,
+          "other": 0.3
+        },
+        "eraMean": 2015.0,
+        "eraStd": 4.0,
+        "eraCount": 10
+      },
+      "expected": {
+        "artist": 0.4,
+        "matched": [
+          "a1"
+        ],
+        "era": 0.7548396019890073,
+        "score": 0.4532259402983511
+      }
+    },
+    {
+      "name": "multi-artist sum with clamp",
+      "track": {
+        "artistIds": [
+          "a1",
+          "a2",
+          "a3"
+        ],
+        "releaseYear": null
+      },
+      "profile": {
+        "artistWeights": {
+          "a1": 0.6,
+          "a2": 0.55,
+          "a3": 0.2
+        },
+        "eraMean": null,
+        "eraStd": null,
+        "eraCount": 0
+      },
+      "expected": {
+        "artist": 1.0,
+        "matched": [
+          "a1",
+          "a2",
+          "a3"
+        ],
+        "era": null,
+        "score": 1.0
+      }
+    },
+    {
+      "name": "era only, tight std floored to 3",
+      "track": {
+        "artistIds": [
+          "nobody"
+        ],
+        "releaseYear": 2010
+      },
+      "profile": {
+        "artistWeights": {
+          "a1": 0.5
+        },
+        "eraMean": 2008.0,
+        "eraStd": 0.5,
+        "eraCount": 4
+      },
+      "expected": {
+        "artist": 0.0,
+        "matched": [],
+        "era": 0.8007374029168081,
+        "score": 0.1201106104375212
+      }
+    },
+    {
+      "name": "no signal at all",
+      "track": {
+        "artistIds": [
+          "nobody"
+        ],
+        "releaseYear": null
+      },
+      "profile": {
+        "artistWeights": {
+          "a1": 1.0
+        },
+        "eraMean": 2000.0,
+        "eraStd": 10.0,
+        "eraCount": 5
+      },
+      "expected": {
+        "artist": 0.0,
+        "matched": [],
+        "era": null,
+        "score": 0.0
+      }
+    },
+    {
+      "name": "far era decays toward zero",
+      "track": {
+        "artistIds": [],
+        "releaseYear": 1975
+      },
+      "profile": {
+        "artistWeights": {},
+        "eraMean": 2020.0,
+        "eraStd": 6.0,
+        "eraCount": 30
+      },
+      "expected": {
+        "artist": 0.0,
+        "matched": [],
+        "era": 6.101936677605324e-13,
+        "score": 9.152905016407986e-14
+      }
+    }
+  ]
+}
