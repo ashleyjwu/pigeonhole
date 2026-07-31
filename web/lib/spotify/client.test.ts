@@ -89,6 +89,41 @@ describe("addTrackToPlaylist", () => {
   });
 });
 
+describe("addTracksToPlaylist", () => {
+  it("sends one request for <=100 tracks", async () => {
+    const { client, fetchImpl } = clientWith([jsonResponse(201, { snapshot_id: "snap-a" })]);
+    const snapshot = await client.addTracksToPlaylist("pl1", ["t1", "t2", "t3"]);
+    expect(snapshot).toBe("snap-a");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [, init] = vi.mocked(fetchImpl).mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      uris: ["spotify:track:t1", "spotify:track:t2", "spotify:track:t3"],
+    });
+  });
+
+  it("splits more than 100 tracks into sequential batches", async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => `t${i}`);
+    const { client, fetchImpl } = clientWith([
+      jsonResponse(201, { snapshot_id: "snap-1" }),
+      jsonResponse(201, { snapshot_id: "snap-2" }),
+    ]);
+    const snapshot = await client.addTracksToPlaylist("pl1", ids);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(snapshot).toBe("snap-2"); // final batch's snapshot wins
+
+    const bodies = vi.mocked(fetchImpl).mock.calls.map(
+      ([, init]) => (JSON.parse(String((init as RequestInit).body)) as { uris: string[] }).uris,
+    );
+    expect(bodies[0]).toHaveLength(100);
+    expect(bodies[1]).toHaveLength(50);
+  });
+
+  it("rejects an empty track list", async () => {
+    const { client } = clientWith([]);
+    await expect(client.addTracksToPlaylist("pl1", [])).rejects.toThrow(/must not be empty/);
+  });
+});
+
 describe("retry behavior", () => {
   it("retries 429 honoring Retry-After, then succeeds", async () => {
     const sleeps: number[] = [];

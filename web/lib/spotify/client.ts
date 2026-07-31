@@ -7,9 +7,14 @@
  * sleep are injectable for network-free tests.
  */
 
+import { chunk } from "@/lib/util";
+
 const API_BASE = "https://api.spotify.com/v1";
 const MAX_ATTEMPTS = 5;
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503]);
+
+/** Spotify's maximum track URIs per add-to-playlist request. */
+const MAX_URIS_PER_REQUEST = 100;
 
 /** A Retry-After beyond this means the dev-mode quota is exhausted; fail fast
  *  instead of sleeping inside a request handler. Mirrors the Python client. */
@@ -154,11 +159,29 @@ export class SpotifyClient {
   /** Append a track to a playlist. Returns the new playlist snapshot id.
    *  NOTE: POST /playlists/{id}/tracks became /items in the Feb-2026 API. */
   async addTrackToPlaylist(playlistId: string, trackId: string): Promise<string> {
-    const response = await this.request(`${API_BASE}/playlists/${playlistId}/items`, {
-      method: "POST",
-      body: JSON.stringify({ uris: [`spotify:track:${trackId}`] }),
-    });
-    const payload = (await response.json()) as { snapshot_id: string };
-    return payload.snapshot_id;
+    return this.addTracksToPlaylist(playlistId, [trackId]);
+  }
+
+  /**
+   * Append up to 100 tracks to a playlist in one call (the API's per-request
+   * max). More than 100 are split into sequential batched requests; returns
+   * the final snapshot id. Used by the batch/bulk-commit flow so clearing a
+   * backlog of unfiled tracks costs far fewer requests than one-at-a-time
+   * adds — meaningful given the dev-mode write quota.
+   */
+  async addTracksToPlaylist(playlistId: string, trackIds: string[]): Promise<string> {
+    if (trackIds.length === 0) {
+      throw new Error("addTracksToPlaylist: trackIds must not be empty");
+    }
+    let snapshotId = "";
+    for (const batch of chunk(trackIds, MAX_URIS_PER_REQUEST)) {
+      const response = await this.request(`${API_BASE}/playlists/${playlistId}/items`, {
+        method: "POST",
+        body: JSON.stringify({ uris: batch.map((id) => `spotify:track:${id}`) }),
+      });
+      const payload = (await response.json()) as { snapshot_id: string };
+      snapshotId = payload.snapshot_id;
+    }
+    return snapshotId;
   }
 }

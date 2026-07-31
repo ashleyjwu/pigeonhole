@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 
+import { Batch } from "@/components/batch";
 import { Hero } from "@/components/hero";
 import { Search } from "@/components/search";
 
-type Tab = "now-playing" | "search";
+type Tab = "now-playing" | "search" | "batch";
 
 export function HomeTabs() {
   const [tab, setTab] = useState<Tab>("now-playing");
@@ -19,8 +20,11 @@ export function HomeTabs() {
         <TabButton active={tab === "search"} onClick={() => setTab("search")}>
           Search
         </TabButton>
+        <TabButton active={tab === "batch"} onClick={() => setTab("batch")}>
+          Sort likes
+        </TabButton>
       </div>
-      {tab === "now-playing" ? <Hero /> : <Search />}
+      {tab === "now-playing" ? <Hero /> : tab === "search" ? <Search /> : <Batch />}
     </div>
   );
 }

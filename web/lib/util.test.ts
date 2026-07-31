@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clamp } from "./util";
+import { chunk, clamp } from "./util";
 
 describe("clamp", () => {
   it("returns the value when within range", () => {
@@ -17,5 +17,26 @@ describe("clamp", () => {
 
   it("throws when min > max", () => {
     expect(() => clamp(1, 10, 0)).toThrow();
+  });
+});
+
+describe("chunk", () => {
+  it("splits evenly", () => {
+    expect(chunk([1, 2, 3, 4], 2)).toEqual([
+      [1, 2],
+      [3, 4],
+    ]);
+  });
+
+  it("handles a remainder", () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+
+  it("returns [] for an empty array", () => {
+    expect(chunk([], 3)).toEqual([]);
+  });
+
+  it("rejects a non-positive size", () => {
+    expect(() => chunk([1, 2, 3], 0)).toThrow();
   });
 });
