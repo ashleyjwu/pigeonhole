@@ -2,8 +2,11 @@
 
 A profile summarizes a playlist using the data still available under the
 Feb-2026 API: per-artist prominence (fraction of the playlist's tracks that
-feature each artist) and the release-year (era) distribution. Genres and
-popularity are gone, so they are not part of the profile.
+feature each artist), the release-year (era) distribution, and a recency
+signal derived from playlist_tracks.added_at (Spotify exposes no playlist
+creation date at all, so this is the best available proxy — see
+migrations/0005_profile_recency.sql). Genres and popularity are gone, so they
+are not part of the profile.
 
 Profiles are written to the ``playlist_profiles`` table and consumed by the
 web scorer (``web/lib/scoring``). The pure ``build_profile`` is unit-tested;
@@ -20,6 +23,7 @@ import sys
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -27,8 +31,9 @@ from psycopg.types.json import Jsonb
 
 from pigeonhole_worker.db import connect
 
-# A track object contributes (its artist ids, its release year-or-None).
-TrackFacts = tuple[list[str], int | None]
+# A track object contributes (its artist ids, its release year-or-None, and
+# when it was added to the playlist-or-None).
+TrackFacts = tuple[list[str], int | None, datetime | None]
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,8 @@ class PlaylistProfile:
     era_mean: float | None
     era_std: float | None
     era_count: int
+    oldest_track_added_at: datetime | None  # proxy for "playlist created"
+    newest_track_added_at: datetime | None  # exact "playlist last updated"
 
 
 def build_profile(playlist_id: str, tracks: Sequence[TrackFacts]) -> PlaylistProfile:
@@ -46,11 +53,14 @@ def build_profile(playlist_id: str, tracks: Sequence[TrackFacts]) -> PlaylistPro
     track_count = len(tracks)
     artist_track_counts: Counter[str] = Counter()
     years: list[int] = []
-    for artist_ids, year in tracks:
+    added_ats: list[datetime] = []
+    for artist_ids, year, added_at in tracks:
         for artist_id in set(artist_ids):  # a track counts once per distinct artist
             artist_track_counts[artist_id] += 1
         if year is not None:
             years.append(year)
+        if added_at is not None:
+            added_ats.append(added_at)
 
     weights = {a: c / track_count for a, c in artist_track_counts.items()} if track_count else {}
     era_mean = statistics.fmean(years) if years else None
@@ -68,6 +78,8 @@ def build_profile(playlist_id: str, tracks: Sequence[TrackFacts]) -> PlaylistPro
         era_mean=era_mean,
         era_std=era_std,
         era_count=len(years),
+        oldest_track_added_at=min(added_ats) if added_ats else None,
+        newest_track_added_at=max(added_ats) if added_ats else None,
     )
 
 
@@ -80,12 +92,15 @@ def store_profile(conn: psycopg.Connection[Any], profile: PlaylistProfile) -> No
     conn.execute(
         """
         INSERT INTO playlist_profiles
-            (playlist_id, artist_weights, artist_set, era_stats, updated_at)
-        VALUES (%s, %s, %s, %s, now())
+            (playlist_id, artist_weights, artist_set, era_stats,
+             oldest_track_added_at, newest_track_added_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, now())
         ON CONFLICT (playlist_id) DO UPDATE SET
             artist_weights = EXCLUDED.artist_weights,
             artist_set = EXCLUDED.artist_set,
             era_stats = EXCLUDED.era_stats,
+            oldest_track_added_at = EXCLUDED.oldest_track_added_at,
+            newest_track_added_at = EXCLUDED.newest_track_added_at,
             updated_at = now()
         """,
         (
@@ -93,6 +108,8 @@ def store_profile(conn: psycopg.Connection[Any], profile: PlaylistProfile) -> No
             Jsonb(profile.artist_weights),
             list(profile.artist_weights.keys()),
             Jsonb(era_stats) if era_stats is not None else None,
+            profile.oldest_track_added_at,
+            profile.newest_track_added_at,
         ),
     )
     conn.commit()
@@ -104,14 +121,14 @@ def compute_all(conn: psycopg.Connection[Any]) -> int:
     for playlist_id in playlist_ids:
         rows = conn.execute(
             """
-            SELECT t.artist_ids, t.release_year
+            SELECT t.artist_ids, t.release_year, pt.added_at
             FROM playlist_tracks pt
             JOIN tracks t ON t.spotify_id = pt.track_id
             WHERE pt.playlist_id = %s
             """,
             (playlist_id,),
         ).fetchall()
-        tracks: list[TrackFacts] = [(row[0], row[1]) for row in rows]
+        tracks: list[TrackFacts] = [(row[0], row[1], row[2]) for row in rows]
         store_profile(conn, build_profile(playlist_id, tracks))
     return len(playlist_ids)
 

@@ -13,8 +13,16 @@ Playlists smaller than --min-size (default 2) are skipped as hold-out sources
 (removing the only track leaves nothing to profile) but still compete as
 candidates.
 
+Age filtering (--max-age-years): grading the algorithm on whether it guesses
+placements into a playlist you've abandoned isn't a fair test of how well it
+serves you today. When set, playlists whose proxy-creation date (oldest track
+add — see profiles.py) is older than the cutoff are dropped entirely from the
+evaluation, both as hold-out sources and as competing candidates. Playlists
+with no date data (can't determine their age) are conservatively dropped too
+— we don't claim fairness for something we can't verify.
+
 Usage:
-    python -m pigeonhole_worker.evaluate [--min-size N] [--top-k K]
+    python -m pigeonhole_worker.evaluate [--min-size N] [--max-age-years N]
 """
 
 from __future__ import annotations
@@ -23,6 +31,7 @@ import argparse
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from pigeonhole_worker.profiles import build_profile
 from pigeonhole_worker.scoring import (
@@ -38,6 +47,7 @@ class PlacementTrack:
     track_id: str
     artist_ids: tuple[str, ...]
     release_year: int | None
+    added_at: datetime | None = None
 
 
 @dataclass
@@ -75,14 +85,35 @@ class EvalReport:
         return self.rank_sum / self.ranked if self.ranked else None
 
 
+def filter_by_age(
+    playlists: Mapping[str, Sequence[PlacementTrack]],
+    max_age_years: float,
+    now: datetime,
+) -> dict[str, list[PlacementTrack]]:
+    """Keep only playlists whose oldest track add is within `max_age_years`
+    of `now`. Playlists with no dated tracks are dropped (unverifiable age).
+    """
+    cutoff = now - timedelta(days=365 * max_age_years)
+    kept: dict[str, list[PlacementTrack]] = {}
+    for pid, tracks in playlists.items():
+        dated = [t.added_at for t in tracks if t.added_at is not None]
+        if dated and min(dated) >= cutoff:
+            kept[pid] = list(tracks)
+    return kept
+
+
 def _facts(playlist_id: str, tracks: Sequence[PlacementTrack]) -> ProfileFacts:
-    profile = build_profile(playlist_id, [(list(t.artist_ids), t.release_year) for t in tracks])
+    profile = build_profile(
+        playlist_id, [(list(t.artist_ids), t.release_year, t.added_at) for t in tracks]
+    )
     return ProfileFacts(
         playlist_id=playlist_id,
         artist_weights=profile.artist_weights,
         era_mean=profile.era_mean,
         era_std=profile.era_std,
         era_count=profile.era_count,
+        oldest_track_added_at=profile.oldest_track_added_at,
+        newest_track_added_at=profile.newest_track_added_at,
     )
 
 
@@ -91,7 +122,21 @@ def evaluate_placements(
     playlist_names: Mapping[str, str] | None = None,
     weights: ScoreWeights = DEFAULT_WEIGHTS,
     min_playlist_size: int = 2,
+    now: datetime | None = None,
+    max_age_years: float | None = None,
 ) -> EvalReport:
+    """`now` anchors the recency window; defaults to the real current time so
+    a plain `evaluate_placements(playlists)` call evaluates "as of today"
+    (matching production), while tests pass a fixed value for determinism.
+
+    `max_age_years`, when set, drops playlists older than that (by
+    proxy-creation date) from evaluation entirely — both as hold-out sources
+    and as competing candidates — before any scoring happens. See
+    `filter_by_age` for exactly how age is determined.
+    """
+    resolved_now = now if now is not None else datetime.now(UTC)
+    if max_age_years is not None:
+        playlists = filter_by_age(playlists, max_age_years, resolved_now)
     names = playlist_names or {}
     report = EvalReport()
     full_profiles = {pid: _facts(pid, tracks) for pid, tracks in playlists.items()}
@@ -110,7 +155,11 @@ def evaluate_placements(
             for cid, profile in full_profiles.items():
                 candidate = home_profile if cid == pid else profile
                 scores[cid] = score_playlist(
-                    held_out.artist_ids, held_out.release_year, candidate, weights
+                    held_out.artist_ids,
+                    held_out.release_year,
+                    candidate,
+                    weights,
+                    now=resolved_now,
                 )
 
             report.placements += 1
@@ -145,15 +194,15 @@ def load_placements() -> tuple[dict[str, list[PlacementTrack]], dict[str, str]]:
         playlists: dict[str, list[PlacementTrack]] = {pid: [] for pid in names}
         rows = conn.execute(
             """
-            SELECT pt.playlist_id, t.spotify_id, t.artist_ids, t.release_year
+            SELECT pt.playlist_id, t.spotify_id, t.artist_ids, t.release_year, pt.added_at
             FROM playlist_tracks pt
             JOIN tracks t ON t.spotify_id = pt.track_id
             ORDER BY pt.playlist_id, pt.position
             """
         ).fetchall()
-        for playlist_id, track_id, artist_ids, release_year in rows:
+        for playlist_id, track_id, artist_ids, release_year, added_at in rows:
             playlists[playlist_id].append(
-                PlacementTrack(track_id, tuple(artist_ids or []), release_year)
+                PlacementTrack(track_id, tuple(artist_ids or []), release_year, added_at)
             )
         return playlists, names
     finally:
@@ -163,10 +212,27 @@ def load_placements() -> tuple[dict[str, list[PlacementTrack]], dict[str, str]]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate the playlist suggestion scorer.")
     parser.add_argument("--min-size", type=int, default=2)
+    parser.add_argument(
+        "--max-age-years",
+        type=float,
+        default=None,
+        help="Drop playlists older than this (by oldest track add) from evaluation entirely.",
+    )
     args = parser.parse_args(argv)
 
     playlists, names = load_placements()
-    report = evaluate_placements(playlists, names, min_playlist_size=args.min_size)
+    now = datetime.now(UTC)
+    if args.max_age_years is not None:
+        filtered = filter_by_age(playlists, args.max_age_years, now)
+        print(
+            f"age filter (<= {args.max_age_years:g}y): kept {len(filtered)}/{len(playlists)} "
+            f"playlists ({len(playlists) - len(filtered)} dropped as too old or undated)\n"
+        )
+        playlists = filtered
+        names = {pid: name for pid, name in names.items() if pid in filtered}
+    report = evaluate_placements(
+        playlists, names, min_playlist_size=args.min_size, now=now
+    )
 
     print(f"placements evaluated: {report.placements}")
     print(f"hit@1: {report.hit_rate_at_1:.3f}")

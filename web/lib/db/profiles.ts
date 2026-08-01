@@ -11,6 +11,8 @@ export interface ProfileRow {
   artist_weights: Record<string, number> | null;
   era_stats: { mean: number; std: number; count: number } | null;
   track_count: string | number;
+  oldest_track_added_at: Date | string | null;
+  newest_track_added_at: Date | string | null;
 }
 
 /** Pure row -> profile mapping (unit-tested without a database). */
@@ -28,6 +30,8 @@ export function mapProfileRow(row: ProfileRow): PlaylistProfile {
             count: row.era_stats.count,
           }
         : null,
+    oldestTrackAddedAt: row.oldest_track_added_at ? new Date(row.oldest_track_added_at) : null,
+    newestTrackAddedAt: row.newest_track_added_at ? new Date(row.newest_track_added_at) : null,
   };
 }
 
@@ -37,6 +41,7 @@ export function mapProfileRow(row: ProfileRow): PlaylistProfile {
 export async function loadPlaylistProfiles(userId: string): Promise<PlaylistProfile[]> {
   const result = await getPool().query<ProfileRow>(
     `SELECT p.spotify_id, p.name, pr.artist_weights, pr.era_stats,
+            pr.oldest_track_added_at, pr.newest_track_added_at,
             (SELECT count(*) FROM playlist_tracks pt
               WHERE pt.playlist_id = p.spotify_id) AS track_count
      FROM playlists p

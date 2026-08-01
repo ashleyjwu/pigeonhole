@@ -27,6 +27,8 @@ function profile(id: string, weights: Record<string, number>): PlaylistProfile {
     trackCount: 10,
     artistWeights: weights,
     era: null,
+    oldestTrackAddedAt: null,
+    newestTrackAddedAt: null,
   };
 }
 

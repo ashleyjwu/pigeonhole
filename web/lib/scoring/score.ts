@@ -8,10 +8,21 @@
  *     playlist
  *   - era proximity (secondary): how close the track's release year is to the
  *     playlist's release-year distribution
+ *   - recency (multiplicative boost): playlists proxy-"created" or updated
+ *     within the last 2 years get a small/larger score boost, respectively
  *
  * Genre and popularity signals no longer exist. Track co-occurrence /
  * embeddings are a later, separately-evaluated experiment. Weights are
  * constants here and will be tuned against the eval harness.
+ *
+ * Recency: Spotify's API exposes no playlist creation date, so "created" is
+ * proxied by the playlist's OLDEST track add (a playlist can't be older than
+ * its oldest addition) and "updated" is the exact newest track add. Both
+ * apply as MULTIPLICATIVE boosts on the final artist+era score rather than
+ * as additive weighted components — an additive term would let a
+ * zero-relevance playlist surface just for being recently active, which is
+ * not the goal; multiplying preserves score=0 for irrelevant playlists while
+ * nudging up relevant, active ones among otherwise-close candidates.
  */
 
 import type { TrackSummary } from "@/lib/spotify/client";
@@ -21,12 +32,23 @@ import type { PlaylistProfile, Suggestion } from "./types";
 export interface ScoreWeights {
   artist: number;
   era: number;
+  /** Multiplicative boosts, applied only when the respective proxy date is
+   *  within RECENCY_WINDOW_MS of `now`. 1.0 = no boost. */
+  createdBoost: number;
+  updatedBoost: number;
 }
 
-export const DEFAULT_WEIGHTS: ScoreWeights = { artist: 0.85, era: 0.15 };
+export const DEFAULT_WEIGHTS: ScoreWeights = {
+  artist: 0.85,
+  era: 0.15,
+  createdBoost: 1.05,
+  updatedBoost: 1.15,
+};
 
 /** Floor on a playlist's era spread, so tight-era playlists aren't over-strict. */
 const MIN_ERA_STD = 3;
+
+export const RECENCY_WINDOW_MS = 1000 * 60 * 60 * 24 * 365 * 2; // 2 years
 
 export interface PlaylistScore {
   score: number;
@@ -62,10 +84,34 @@ export function eraComponent(track: TrackSummary, profile: PlaylistProfile): num
   return Math.exp(-0.5 * z * z);
 }
 
+/**
+ * 1.0, or boosted if the playlist was proxy-created/updated within 2 years
+ * of `now`. Both boosts can stack: since newest >= oldest always, a
+ * playlist proxy-"created" recently is also proxy-"updated" recently — that
+ * is correct (a brand-new playlist is definitionally recently active too),
+ * not double-counting the same evidence twice by mistake.
+ */
+export function recencyMultiplier(
+  profile: PlaylistProfile,
+  weights: ScoreWeights,
+  now: Date,
+): number {
+  let multiplier = 1;
+  const cutoff = now.getTime() - RECENCY_WINDOW_MS;
+  if (profile.oldestTrackAddedAt !== null && profile.oldestTrackAddedAt.getTime() >= cutoff) {
+    multiplier *= weights.createdBoost;
+  }
+  if (profile.newestTrackAddedAt !== null && profile.newestTrackAddedAt.getTime() >= cutoff) {
+    multiplier *= weights.updatedBoost;
+  }
+  return multiplier;
+}
+
 export function scorePlaylist(
   track: TrackSummary,
   profile: PlaylistProfile,
   weights: ScoreWeights = DEFAULT_WEIGHTS,
+  now: Date = new Date(),
 ): PlaylistScore {
   const artist = artistComponent(track, profile);
   const era = eraComponent(track, profile);
@@ -78,9 +124,10 @@ export function scorePlaylist(
     weightedSum += weights.era * era;
     totalWeight += weights.era;
   }
+  const base = totalWeight > 0 ? weightedSum / totalWeight : 0;
 
   return {
-    score: totalWeight > 0 ? weightedSum / totalWeight : 0,
+    score: base * recencyMultiplier(profile, weights, now),
     matchedArtistIds: artist.matched,
     eraContributed: era !== null,
   };
@@ -104,6 +151,9 @@ export interface SuggestOptions {
   weights?: ScoreWeights;
   /** Minimum score to include (exclusive). Defaults to 0 (drop non-matches). */
   minScore?: number;
+  /** Anchors the recency window; defaults to the real current time. Tests
+   *  pass a fixed value for determinism. */
+  now?: Date;
 }
 
 /** Rank playlists for a candidate track; highest score first. */
@@ -112,11 +162,11 @@ export function suggestPlaylists(
   profiles: PlaylistProfile[],
   options: SuggestOptions = {},
 ): Suggestion[] {
-  const { limit = 3, weights = DEFAULT_WEIGHTS, minScore = 0 } = options;
+  const { limit = 3, weights = DEFAULT_WEIGHTS, minScore = 0, now = new Date() } = options;
 
   return profiles
     .map((profile) => {
-      const result = scorePlaylist(track, profile, weights);
+      const result = scorePlaylist(track, profile, weights, now);
       return {
         playlistId: profile.playlistId,
         playlistName: profile.playlistName,

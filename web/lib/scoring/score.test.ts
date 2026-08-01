@@ -2,8 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import type { TrackSummary } from "@/lib/spotify/client";
 
-import { artistComponent, eraComponent, scorePlaylist, suggestPlaylists } from "./score";
+import {
+  artistComponent,
+  DEFAULT_WEIGHTS,
+  eraComponent,
+  recencyMultiplier,
+  scorePlaylist,
+  suggestPlaylists,
+} from "./score";
 import type { PlaylistProfile } from "./types";
+
+const NOW = new Date("2026-07-31T00:00:00.000Z");
+const RECENT = new Date(NOW.getTime() - 30 * 24 * 60 * 60 * 1000);
+const OLD = new Date(NOW.getTime() - 5 * 365 * 24 * 60 * 60 * 1000);
 
 function track(overrides: Partial<TrackSummary> = {}): TrackSummary {
   return {
@@ -27,6 +38,8 @@ function profile(overrides: Partial<PlaylistProfile> = {}): PlaylistProfile {
     trackCount: 10,
     artistWeights: {},
     era: null,
+    oldestTrackAddedAt: null,
+    newestTrackAddedAt: null,
     ...overrides,
   };
 }
@@ -85,6 +98,52 @@ describe("scorePlaylist", () => {
   });
 });
 
+describe("recencyMultiplier", () => {
+  it("is neutral when no dates are set", () => {
+    expect(recencyMultiplier(profile(), DEFAULT_WEIGHTS, NOW)).toBe(1);
+  });
+
+  it("applies the created boost for a recent oldest-track date", () => {
+    const p = profile({ oldestTrackAddedAt: RECENT });
+    expect(recencyMultiplier(p, DEFAULT_WEIGHTS, NOW)).toBe(DEFAULT_WEIGHTS.createdBoost);
+  });
+
+  it("applies the updated boost for a recent newest-track date", () => {
+    const p = profile({ newestTrackAddedAt: RECENT });
+    expect(recencyMultiplier(p, DEFAULT_WEIGHTS, NOW)).toBe(DEFAULT_WEIGHTS.updatedBoost);
+  });
+
+  it("stacks both boosts when both dates are recent", () => {
+    const p = profile({ oldestTrackAddedAt: RECENT, newestTrackAddedAt: RECENT });
+    expect(recencyMultiplier(p, DEFAULT_WEIGHTS, NOW)).toBeCloseTo(
+      DEFAULT_WEIGHTS.createdBoost * DEFAULT_WEIGHTS.updatedBoost,
+    );
+  });
+
+  it("ignores dates outside the 2-year window", () => {
+    const p = profile({ oldestTrackAddedAt: OLD, newestTrackAddedAt: OLD });
+    expect(recencyMultiplier(p, DEFAULT_WEIGHTS, NOW)).toBe(1);
+  });
+});
+
+describe("scorePlaylist recency", () => {
+  it("scales the base score by the recency multiplier", () => {
+    const base = scorePlaylist(track(), profile({ artistWeights: { a1: 1 } }), DEFAULT_WEIGHTS, NOW);
+    const boosted = scorePlaylist(
+      track(),
+      profile({ artistWeights: { a1: 1 }, newestTrackAddedAt: RECENT }),
+      DEFAULT_WEIGHTS,
+      NOW,
+    );
+    expect(boosted.score).toBeCloseTo(base.score * DEFAULT_WEIGHTS.updatedBoost);
+  });
+
+  it("cannot rescue a zero-relevance playlist (multiplicative, not additive)", () => {
+    const p = profile({ artistWeights: { someoneElse: 1 }, newestTrackAddedAt: RECENT });
+    expect(scorePlaylist(track(), p, DEFAULT_WEIGHTS, NOW).score).toBe(0);
+  });
+});
+
 describe("suggestPlaylists", () => {
   const t = track({ artistIds: ["a1"], artistNames: ["Alvvays"], releaseYear: 2018 });
 
@@ -121,5 +180,14 @@ describe("suggestPlaylists", () => {
   it("drops non-matching playlists by default", () => {
     const profiles = [profile({ playlistId: "none", artistWeights: { z: 1 }, era: null })];
     expect(suggestPlaylists(t, profiles)).toEqual([]);
+  });
+
+  it("breaks a content tie in favor of the more recently active playlist", () => {
+    const profiles = [
+      profile({ playlistId: "stale", artistWeights: { a1: 0.5 }, newestTrackAddedAt: OLD }),
+      profile({ playlistId: "active", artistWeights: { a1: 0.5 }, newestTrackAddedAt: RECENT }),
+    ];
+    const suggestions = suggestPlaylists(t, profiles, { now: NOW });
+    expect(suggestions[0]?.playlistId).toBe("active");
   });
 });

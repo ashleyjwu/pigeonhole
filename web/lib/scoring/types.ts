@@ -11,6 +11,11 @@ export interface PlaylistProfile {
   artistWeights: Record<string, number>;
   /** Release-year distribution, or null when no track in the playlist has a year. */
   era: { meanYear: number; stdYear: number; count: number } | null;
+  /** Proxy for "playlist created": the oldest track add (Spotify exposes no
+   *  playlist creation date). Null when the playlist has no tracks. */
+  oldestTrackAddedAt: Date | null;
+  /** Exact "playlist last updated": the newest track add. */
+  newestTrackAddedAt: Date | null;
 }
 
 export interface Suggestion {

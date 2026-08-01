@@ -17,12 +17,15 @@ import type { PlaylistProfile } from "./types";
 
 interface Vector {
   name: string;
+  now: string;
   track: { artistIds: string[]; releaseYear: number | null };
   profile: {
     artistWeights: Record<string, number>;
     eraMean: number | null;
     eraStd: number | null;
     eraCount: number;
+    oldestTrackAddedAt: string | null;
+    newestTrackAddedAt: string | null;
   };
   expected: {
     artist: number;
@@ -64,6 +67,8 @@ function toProfile(v: Vector): PlaylistProfile {
             count: v.profile.eraCount,
           }
         : null,
+    oldestTrackAddedAt: v.profile.oldestTrackAddedAt ? new Date(v.profile.oldestTrackAddedAt) : null,
+    newestTrackAddedAt: v.profile.newestTrackAddedAt ? new Date(v.profile.newestTrackAddedAt) : null,
   };
 }
 
@@ -84,7 +89,11 @@ describe("shared scoring vectors (parity with Python)", () => {
         expect(era).toBeCloseTo(vector.expected.era, 12);
       }
 
-      expect(scorePlaylist(track, profile).score).toBeCloseTo(vector.expected.score, 12);
+      const now = new Date(vector.now);
+      expect(scorePlaylist(track, profile, undefined, now).score).toBeCloseTo(
+        vector.expected.score,
+        12,
+      );
     });
   }
 });
