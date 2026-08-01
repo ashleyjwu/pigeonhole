@@ -245,7 +245,6 @@ function Card({
         >
           Skip
         </button>
-        <p className="text-xs text-neutral-500">Swipe right to queue · left to skip</p>
         {/* Tap a suggestion above to queue this track; this button commits
             everything queued so far — it does NOT accept the top suggestion
             for this card (that was confusing next to three explicit

@@ -35,3 +35,6 @@ sanitized fixtures are committed for tests and CI.
 ## Git
 - Conventional Commits. Build/verify before committing. Never force-push or rewrite
   pushed history. Never run `git push` unless explicitly asked.
+- **Keep commit messages short.** Subject line + a few bullet points max. No user-request
+  framing ("per user feedback", "user asked for") — just what changed and why, plus a
+  results/impact line (e.g. before/after numbers) when there is one to report.
