@@ -22,6 +22,9 @@ export function Batch() {
   const [decisions, setDecisions] = useState<Map<string, Decision>>(new Map());
   const [commitState, setCommitState] = useState<CommitState>("idle");
   const [committedCount, setCommittedCount] = useState(0);
+  // Brief per-decision confirmation so tapping Add/Skip visibly does
+  // something, instead of the only feedback being "the next card appeared".
+  const [lastDecisionLabel, setLastDecisionLabel] = useState<string | null>(null);
 
   useEffect(() => {
     void fetch("/api/batch")
@@ -29,6 +32,12 @@ export function Batch() {
       .then(setPayload)
       .catch(() => setPayload(null));
   }, []);
+
+  useEffect(() => {
+    if (lastDecisionLabel === null) return;
+    const timeout = setTimeout(() => setLastDecisionLabel(null), 1800);
+    return () => clearTimeout(timeout);
+  }, [lastDecisionLabel]);
 
   const cards = payload?.state === "cards" ? payload.cards : [];
   const current = cards[cursor];
@@ -42,6 +51,9 @@ export function Batch() {
 
   function decide(trackId: string, decision: Decision) {
     setDecisions((prev) => new Map(prev).set(trackId, decision));
+    setLastDecisionLabel(
+      decision.kind === "accept" ? `Queued for ${decision.suggestion.playlistName}` : "Skipped",
+    );
     setCursor((c) => c + 1);
   }
 
@@ -106,9 +118,9 @@ export function Batch() {
   }
 
   return (
-    <div className="flex w-full max-w-md flex-col items-center gap-4">
+    <div className="flex w-full max-w-md flex-col items-center gap-3">
       <p className="text-xs text-neutral-500">
-        {cursor + 1} of {cards.length} · {accepted} filed so far
+        {cursor + 1} of {cards.length} · {accepted} queued so far
       </p>
       <Card
         key={current.track.id}
@@ -116,6 +128,25 @@ export function Batch() {
         onAccept={(suggestion) => decide(current.track.id, { kind: "accept", suggestion })}
         onSkip={() => decide(current.track.id, { kind: "skip" })}
       />
+      {/* Visible confirmation that the last tap actually registered. */}
+      <p
+        className={`h-4 text-xs text-green-400 transition-opacity ${
+          lastDecisionLabel ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        {lastDecisionLabel ?? "\u00A0"}
+      </p>
+      {/* Commit is reachable at any point — no need to review all (up to
+          100) cards before anything can actually be added to Spotify. */}
+      {accepted > 0 && (
+        <button
+          type="button"
+          onClick={() => void handleCommit()}
+          className="rounded-full bg-green-500 px-5 py-2 text-sm font-semibold text-black transition hover:bg-green-400"
+        >
+          Add {accepted} queued to playlists now
+        </button>
+      )}
     </div>
   );
 }
