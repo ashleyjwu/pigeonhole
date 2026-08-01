@@ -125,8 +125,10 @@ export function Batch() {
       <Card
         key={current.track.id}
         card={current}
+        acceptedCount={accepted}
         onAccept={(suggestion) => decide(current.track.id, { kind: "accept", suggestion })}
         onSkip={() => decide(current.track.id, { kind: "skip" })}
+        onCommit={() => void handleCommit()}
       />
       {/* Visible confirmation that the last tap actually registered. */}
       <p
@@ -136,29 +138,22 @@ export function Batch() {
       >
         {lastDecisionLabel ?? "\u00A0"}
       </p>
-      {/* Commit is reachable at any point — no need to review all (up to
-          100) cards before anything can actually be added to Spotify. */}
-      {accepted > 0 && (
-        <button
-          type="button"
-          onClick={() => void handleCommit()}
-          className="rounded-full bg-green-500 px-5 py-2 text-sm font-semibold text-black transition hover:bg-green-400"
-        >
-          Add {accepted} queued to playlists now
-        </button>
-      )}
     </div>
   );
 }
 
 function Card({
   card,
+  acceptedCount,
   onAccept,
   onSkip,
+  onCommit,
 }: {
   card: BatchCard;
+  acceptedCount: number;
   onAccept: (suggestion: Suggestion) => void;
   onSkip: () => void;
+  onCommit: () => void;
 }) {
   const [dragX, setDragX] = useState(0);
   const dragStartRef = useRef<number | null>(null);
@@ -250,20 +245,18 @@ function Card({
         >
           Skip
         </button>
-        <p className="text-xs text-neutral-500">
-          Swipe right to add · left to skip
-        </p>
+        <p className="text-xs text-neutral-500">Swipe right to queue · left to skip</p>
+        {/* Tap a suggestion above to queue this track; this button commits
+            everything queued so far — it does NOT accept the top suggestion
+            for this card (that was confusing next to three explicit
+            choices), so it's only enabled once something is queued. */}
         <button
           type="button"
-          disabled={!top}
-          onClick={() => top && onAccept(top)}
-          className={
-            bias === "accept"
-              ? "rounded-full bg-green-500 px-5 py-2 font-semibold text-black"
-              : "rounded-full bg-green-500/90 px-5 py-2 font-semibold text-black hover:bg-green-400"
-          }
+          disabled={acceptedCount === 0}
+          onClick={onCommit}
+          className="rounded-full bg-green-500 px-5 py-2 font-semibold text-black transition hover:bg-green-400 disabled:opacity-40"
         >
-          Add
+          Add {acceptedCount || ""} to playlists
         </button>
       </div>
     </div>
