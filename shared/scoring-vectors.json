@@ -1,5 +1,5 @@
 {
-  "description": "Shared scoring test vectors. Consumed by BOTH worker/tests/test_scoring.py and web/lib/scoring/score.test.ts to keep the two scorer implementations behavior-identical. `now` anchors the recency window for cases that set oldestTrackAddedAt/newestTrackAddedAt. Regenerate only when the scoring algorithm intentionally changes.",
+  "description": "Shared scoring test vectors. Consumed by BOTH worker/tests/test_scoring.py and web/lib/scoring/score.test.ts (via vectors.test.ts) to keep the two scorer implementations behavior-identical. `now` anchors the recency window. `weights` (optional; omitted -> DEFAULT_WEIGHTS) lets a case exercise a non-default weighting, e.g. genre turned on for its own tests. Regenerate only when the scoring algorithm intentionally changes.",
   "cases": [
     {
       "name": "artist and era both present",
@@ -27,6 +27,8 @@
           "a1"
         ],
         "era": 0.7548396019890073,
+        "genre": null,
+        "genreMatched": [],
         "score": 0.4532259402983511
       }
     },
@@ -61,6 +63,8 @@
           "a3"
         ],
         "era": null,
+        "genre": null,
+        "genreMatched": [],
         "score": 1.0
       }
     },
@@ -87,6 +91,8 @@
         "artist": 0.0,
         "matched": [],
         "era": 0.8007374029168081,
+        "genre": null,
+        "genreMatched": [],
         "score": 0.1201106104375212
       }
     },
@@ -113,6 +119,8 @@
         "artist": 0.0,
         "matched": [],
         "era": null,
+        "genre": null,
+        "genreMatched": [],
         "score": 0.0
       }
     },
@@ -135,6 +143,8 @@
         "artist": 0.0,
         "matched": [],
         "era": 6.101936677605324e-13,
+        "genre": null,
+        "genreMatched": [],
         "score": 9.152905016407986e-14
       }
     },
@@ -163,6 +173,8 @@
           "a1"
         ],
         "era": null,
+        "genre": null,
+        "genreMatched": [],
         "score": 1.15
       }
     },
@@ -191,6 +203,8 @@
           "a1"
         ],
         "era": 0.7548396019890073,
+        "genre": null,
+        "genreMatched": [],
         "score": 0.547270322910259
       }
     },
@@ -219,6 +233,8 @@
           "a1"
         ],
         "era": null,
+        "genre": null,
+        "genreMatched": [],
         "score": 1.0
       }
     },
@@ -245,7 +261,211 @@
         "artist": 0.0,
         "matched": [],
         "era": null,
+        "genre": null,
+        "genreMatched": [],
         "score": 0.0
+      }
+    },
+    {
+      "name": "genre: perfect tag match, weighted in",
+      "track": {
+        "artistIds": [
+          "a1"
+        ],
+        "releaseYear": null,
+        "tags": {
+          "indie": 1.0
+        }
+      },
+      "profile": {
+        "artistWeights": {
+          "a1": 0.5
+        },
+        "eraMean": null,
+        "eraStd": null,
+        "eraCount": 0,
+        "oldestTrackAddedAt": null,
+        "newestTrackAddedAt": null,
+        "genreDist": {
+          "indie": 1.0
+        }
+      },
+      "weights": {
+        "artist": 0.5,
+        "era": 0.0,
+        "genre": 0.5,
+        "created_boost": 1.05,
+        "updated_boost": 1.15
+      },
+      "now": "2026-07-31T00:00:00+00:00",
+      "expected": {
+        "artist": 0.5,
+        "matched": [
+          "a1"
+        ],
+        "era": null,
+        "genre": 1.0,
+        "genreMatched": [
+          "indie"
+        ],
+        "score": 0.75
+      }
+    },
+    {
+      "name": "genre: partial cosine overlap",
+      "track": {
+        "artistIds": [],
+        "releaseYear": null,
+        "tags": {
+          "indie": 1.0,
+          "pop": 0.5
+        }
+      },
+      "profile": {
+        "artistWeights": {},
+        "eraMean": null,
+        "eraStd": null,
+        "eraCount": 0,
+        "oldestTrackAddedAt": null,
+        "newestTrackAddedAt": null,
+        "genreDist": {
+          "indie": 1.0,
+          "rock": 0.8
+        }
+      },
+      "weights": {
+        "artist": 0.5,
+        "era": 0.0,
+        "genre": 0.5,
+        "created_boost": 1.05,
+        "updated_boost": 1.15
+      },
+      "now": "2026-07-31T00:00:00+00:00",
+      "expected": {
+        "artist": 0.0,
+        "matched": [],
+        "era": null,
+        "genre": 0.6984302957695782,
+        "genreMatched": [
+          "indie"
+        ],
+        "score": 0.3492151478847891
+      }
+    },
+    {
+      "name": "genre: real zero when both have tags but share none",
+      "track": {
+        "artistIds": [],
+        "releaseYear": null,
+        "tags": {
+          "metal": 1.0
+        }
+      },
+      "profile": {
+        "artistWeights": {},
+        "eraMean": null,
+        "eraStd": null,
+        "eraCount": 0,
+        "oldestTrackAddedAt": null,
+        "newestTrackAddedAt": null,
+        "genreDist": {
+          "jazz": 1.0
+        }
+      },
+      "weights": {
+        "artist": 0.5,
+        "era": 0.0,
+        "genre": 0.5,
+        "created_boost": 1.05,
+        "updated_boost": 1.15
+      },
+      "now": "2026-07-31T00:00:00+00:00",
+      "expected": {
+        "artist": 0.0,
+        "matched": [],
+        "era": null,
+        "genre": 0.0,
+        "genreMatched": [],
+        "score": 0.0
+      }
+    },
+    {
+      "name": "genre: null when track has no tags (excluded, not zero)",
+      "track": {
+        "artistIds": [
+          "a1"
+        ],
+        "releaseYear": null,
+        "tags": null
+      },
+      "profile": {
+        "artistWeights": {
+          "a1": 0.5
+        },
+        "eraMean": null,
+        "eraStd": null,
+        "eraCount": 0,
+        "oldestTrackAddedAt": null,
+        "newestTrackAddedAt": null,
+        "genreDist": {
+          "indie": 1.0
+        }
+      },
+      "weights": {
+        "artist": 0.5,
+        "era": 0.0,
+        "genre": 0.5,
+        "created_boost": 1.05,
+        "updated_boost": 1.15
+      },
+      "now": "2026-07-31T00:00:00+00:00",
+      "expected": {
+        "artist": 0.5,
+        "matched": [
+          "a1"
+        ],
+        "era": null,
+        "genre": null,
+        "genreMatched": [],
+        "score": 0.5
+      }
+    },
+    {
+      "name": "genre: default weights (0.2) blend a tag match into the score",
+      "track": {
+        "artistIds": [
+          "a1"
+        ],
+        "releaseYear": null,
+        "tags": {
+          "indie": 1.0
+        }
+      },
+      "profile": {
+        "artistWeights": {
+          "a1": 0.5
+        },
+        "eraMean": null,
+        "eraStd": null,
+        "eraCount": 0,
+        "oldestTrackAddedAt": null,
+        "newestTrackAddedAt": null,
+        "genreDist": {
+          "indie": 1.0
+        }
+      },
+      "now": "2026-07-31T00:00:00+00:00",
+      "expected": {
+        "artist": 0.5,
+        "matched": [
+          "a1"
+        ],
+        "era": null,
+        "genre": 1.0,
+        "genreMatched": [
+          "indie"
+        ],
+        "score": 0.5952380952380952
       }
     }
   ]

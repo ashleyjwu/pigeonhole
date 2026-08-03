@@ -16,6 +16,11 @@ export interface PlaylistProfile {
   oldestTrackAddedAt: Date | null;
   /** Exact "playlist last updated": the newest track add. */
   newestTrackAddedAt: Date | null;
+  /** tag_name -> normalized weight, merged from Last.fm artist tags (Spotify
+   *  removed genres for dev-mode apps). Null when no track in the playlist
+   *  has any tag data — distinct from {} in principle, but both mean "no
+   *  genre signal" to the scorer. */
+  genreDist: Record<string, number> | null;
 }
 
 export interface Suggestion {

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from pigeonhole_worker.evaluate import PlacementTrack, evaluate_placements, filter_by_age
+from pigeonhole_worker.evaluate import _merge_track_tags as merge_track_tags
+from pigeonhole_worker.scoring import ScoreWeights
 
 NOW = datetime(2026, 7, 31, tzinfo=UTC)
 RECENT = NOW - timedelta(days=30)
@@ -14,8 +16,9 @@ def track(
     *artists: str,
     year: int | None = 2020,
     added_at: datetime | None = None,
+    tags: dict[str, float] | None = None,
 ) -> PlacementTrack:
-    return PlacementTrack(track_id, tuple(artists), year, added_at)
+    return PlacementTrack(track_id, tuple(artists), year, added_at, tags=tags or {})
 
 
 def test_dominant_artist_ranks_home_first() -> None:
@@ -178,3 +181,79 @@ def test_evaluate_with_max_age_years_excludes_old_playlists_as_sources_and_candi
     # ...and every "young" placement's top match is "young" itself, since
     # "old" never competes as a candidate either.
     assert report.hits_at_1 == 2
+
+
+# ── genre ────────────────────────────────────────────────────────────────
+
+
+def test_merge_track_tags_takes_max_across_a_tracks_artists() -> None:
+    tags_by_artist = {"a1": {"indie": 1.0}, "a2": {"indie": 0.6, "pop": 0.4}}
+    merged = merge_track_tags(("a1", "a2"), tags_by_artist)
+    assert merged == {"indie": 1.0, "pop": 0.4}
+
+
+def test_merge_track_tags_empty_when_no_artist_has_tags() -> None:
+    assert merge_track_tags(("a1",), {}) == {}
+
+
+def test_genre_contributes_by_default() -> None:
+    # DEFAULT_WEIGHTS.genre == 0.2 (validated against the eval harness — see
+    # scoring.py). Two playlists tie on artist overlap; each held-out track
+    # shares its own remaining tracks' genre tag but not the other
+    # playlist's, so genre should correctly break what would otherwise be a
+    # pure artist tie for every placement.
+    playlists = {
+        "no-genre-match": [
+            track("a1", "x", tags={"jazz": 1.0}),
+            track("a2", "x", tags={"jazz": 1.0}),
+        ],
+        "genre-match": [
+            track("b1", "x", tags={"pop": 1.0}),
+            track("b2", "x", tags={"pop": 1.0}),
+        ],
+    }
+    report = evaluate_placements(playlists, now=NOW)
+    assert report.hits_at_1 == 4
+
+
+def test_genre_weight_zero_disables_the_signal() -> None:
+    # Explicitly disabling genre (weight 0) falls back to the deterministic
+    # alphabetical tiebreak — same tie scenario as above, but with genre out
+    # of the blend, only the alphabetically-first playlist wins every tie.
+    weights = ScoreWeights(artist=0.85, era=0.15, genre=0.0)
+    playlists = {
+        "no-genre-match": [
+            track("a1", "x", tags={"jazz": 1.0}),
+            track("a2", "x", tags={"jazz": 1.0}),
+        ],
+        "genre-match": [
+            track("b1", "x", tags={"pop": 1.0}),
+            track("b2", "x", tags={"pop": 1.0}),
+        ],
+    }
+    report = evaluate_placements(playlists, weights=weights, now=NOW)
+    # With only 2 candidates total, hit@3 is trivially satisfied either way
+    # (nowhere else to rank) — check hit@1 instead, which reflects who
+    # actually won each tie. "genre-match" sorts before "no-genre-match"
+    # alphabetically, so it wins the tiebreak for the placements held out
+    # from the *other* playlist, dragging overall hit@1 below a perfect 4.
+    assert report.hits_at_1 == 2
+
+
+def test_genre_weight_can_break_a_tie_when_enabled() -> None:
+    weights = ScoreWeights(artist=0.5, era=0.0, genre=0.5)
+    playlists = {
+        "aaa-no-genre": [
+            track("a1", "x", tags={"jazz": 1.0}),
+            track("a2", "x", tags={"jazz": 1.0}),
+        ],
+        "zzz-genre-match": [
+            track("b1", "x", tags={"pop": 1.0}),
+            track("b2", "x", tags={"pop": 1.0}),
+        ],
+    }
+    report = evaluate_placements(playlists, weights=weights, now=NOW)
+    # Without genre, "aaa-no-genre" would win every tie alphabetically.
+    # With genre weighted in, the playlist matching the held-out track's own
+    # tag wins instead, despite losing the alphabetical tiebreak.
+    assert report.by_playlist["zzz-genre-match"].hits_at_3 == 2

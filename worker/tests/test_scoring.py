@@ -12,6 +12,7 @@ from pigeonhole_worker.scoring import (
     ScoreWeights,
     artist_component,
     era_component,
+    genre_component,
     recency_multiplier,
     score_playlist,
 )
@@ -39,6 +40,7 @@ def profile_from(case: dict) -> ProfileFacts:  # type: ignore[type-arg]
         newest_track_added_at=(
             datetime.fromisoformat(p["newestTrackAddedAt"]) if p["newestTrackAddedAt"] else None
         ),
+        genre_dist=p.get("genreDist"),
     )
 
 
@@ -47,8 +49,10 @@ def test_shared_vectors(case: dict) -> None:  # type: ignore[type-arg]
     profile = profile_from(case)
     artist_ids = case["track"]["artistIds"]
     year = case["track"]["releaseYear"]
+    track_tags = case["track"].get("tags")
     expected = case["expected"]
     vector_now = datetime.fromisoformat(case["now"])
+    weights = ScoreWeights(**case["weights"]) if "weights" in case else DEFAULT_WEIGHTS
 
     artist_score, matched = artist_component(artist_ids, profile)
     assert artist_score == pytest.approx(expected["artist"], abs=1e-12)
@@ -60,9 +64,16 @@ def test_shared_vectors(case: dict) -> None:  # type: ignore[type-arg]
     else:
         assert era_score == pytest.approx(expected["era"], abs=1e-12)
 
-    assert score_playlist(artist_ids, year, profile, now=vector_now) == pytest.approx(
-        expected["score"], abs=1e-12
-    )
+    genre_score, genre_matched = genre_component(track_tags, profile)
+    if expected.get("genre") is None:
+        assert genre_score is None
+    else:
+        assert genre_score == pytest.approx(expected["genre"], abs=1e-12)
+    assert genre_matched == expected.get("genreMatched", [])
+
+    assert score_playlist(
+        artist_ids, year, profile, weights, now=vector_now, track_tags=track_tags
+    ) == pytest.approx(expected["score"], abs=1e-12)
 
 
 def test_zero_weight_profile_scores_zero() -> None:
@@ -129,3 +140,66 @@ def test_custom_boost_weights_are_respected() -> None:
     weights = ScoreWeights(artist=0.85, era=0.15, created_boost=2.0, updated_boost=1.0)
     profile = ProfileFacts("p", {}, None, None, 0, oldest_track_added_at=RECENT)
     assert recency_multiplier(profile, weights, NOW) == 2.0
+
+
+# ── genre ────────────────────────────────────────────────────────────────
+
+
+def test_genre_component_perfect_match_is_one() -> None:
+    profile = ProfileFacts("p", {}, None, None, 0, genre_dist={"indie": 1.0})
+    score, matched = genre_component({"indie": 1.0}, profile)
+    assert score == pytest.approx(1.0)
+    assert matched == ["indie"]
+
+
+def test_genre_component_partial_overlap_between_zero_and_one() -> None:
+    profile = ProfileFacts("p", {}, None, None, 0, genre_dist={"indie": 1.0, "pop": 0.5})
+    score, matched = genre_component({"indie": 1.0}, profile)
+    assert score is not None
+    assert 0 < score < 1
+    assert matched == ["indie"]
+
+
+def test_genre_component_no_overlap_is_zero_not_none() -> None:
+    # Both sides HAVE tag data, they just share nothing — a real zero, which
+    # should count against the score (unlike the "no data at all" case).
+    profile = ProfileFacts("p", {}, None, None, 0, genre_dist={"jazz": 1.0})
+    score, matched = genre_component({"metal": 1.0}, profile)
+    assert score == 0.0
+    assert matched == []
+
+
+def test_genre_component_none_when_track_has_no_tags() -> None:
+    profile = ProfileFacts("p", {}, None, None, 0, genre_dist={"indie": 1.0})
+    score, matched = genre_component(None, profile)
+    assert score is None
+    assert matched == []
+    assert genre_component({}, profile) == (None, [])
+
+
+def test_genre_component_none_when_playlist_has_no_tags() -> None:
+    profile = ProfileFacts("p", {}, None, None, 0, genre_dist=None)
+    assert genre_component({"indie": 1.0}, profile) == (None, [])
+    profile_empty = ProfileFacts("p", {}, None, None, 0, genre_dist={})
+    assert genre_component({"indie": 1.0}, profile_empty) == (None, [])
+
+
+def test_score_playlist_genre_contributes_when_weighted() -> None:
+    weights = ScoreWeights(artist=0.5, era=0.0, genre=0.5)
+    profile = ProfileFacts("p", {"a1": 0.5}, None, None, 0, genre_dist={"indie": 1.0})
+    with_genre = score_playlist(
+        ["a1"], None, profile, weights, now=NOW, track_tags={"indie": 1.0}
+    )
+    without_genre_data = score_playlist(["a1"], None, profile, weights, now=NOW, track_tags=None)
+    # Same artist match, but genre absent -> falls back to artist-only,
+    # which is a different (lower, since genre matched perfectly) score.
+    assert with_genre > without_genre_data
+
+
+def test_score_playlist_genre_contributes_by_default() -> None:
+    # DEFAULT_WEIGHTS.genre == 0.2 (validated against the eval harness), so
+    # a genre match should move the score above the no-tag-data baseline.
+    profile = ProfileFacts("p", {"a1": 0.5}, None, None, 0, genre_dist={"indie": 1.0})
+    with_tags = score_playlist(["a1"], None, profile, now=NOW, track_tags={"indie": 1.0})
+    without_tags = score_playlist(["a1"], None, profile, now=NOW, track_tags=None)
+    assert with_tags > without_tags

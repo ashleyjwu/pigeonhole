@@ -4,6 +4,7 @@
  * membership so the UI can show "already in playlist" instead of "Add".
  */
 
+import { getTrackGenreTags } from "@/lib/db/genres";
 import { loadPlaylistProfiles } from "@/lib/db/profiles";
 import { playlistsContainingTrack } from "@/lib/db/library";
 import { suggestPlaylists, type SuggestOptions } from "@/lib/scoring/score";
@@ -32,10 +33,16 @@ export async function getSuggestionsForTrack(
   track: TrackSummary,
   options: SuggestOptions = {},
 ): Promise<AnnotatedSuggestion[]> {
-  const profiles = await loadPlaylistProfiles(userId);
+  const [profiles, trackTags] = await Promise.all([
+    loadPlaylistProfiles(userId),
+    options.trackTags === undefined ? getTrackGenreTags(track.artistIds) : options.trackTags,
+  ]);
   const members = await playlistsContainingTrack(
     track.id,
     profiles.map((p) => p.playlistId),
   );
-  return annotateSuggestions(suggestPlaylists(track, profiles, options), members);
+  return annotateSuggestions(
+    suggestPlaylists(track, profiles, { ...options, trackTags }),
+    members,
+  );
 }

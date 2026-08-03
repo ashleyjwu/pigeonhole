@@ -7,6 +7,7 @@ import { annotateSuggestions, getSuggestionsForTrack } from "./suggest";
 
 vi.mock("@/lib/db/profiles", () => ({ loadPlaylistProfiles: vi.fn() }));
 vi.mock("@/lib/db/library", () => ({ playlistsContainingTrack: vi.fn() }));
+vi.mock("@/lib/db/genres", () => ({ getTrackGenreTags: vi.fn().mockResolvedValue(null) }));
 
 const track: TrackSummary = {
   id: "t1",
@@ -29,6 +30,7 @@ function profile(id: string, weights: Record<string, number>): PlaylistProfile {
     era: null,
     oldestTrackAddedAt: null,
     newestTrackAddedAt: null,
+    genreDist: null,
   };
 }
 

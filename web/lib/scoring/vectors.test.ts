@@ -12,13 +12,17 @@ import { describe, expect, it } from "vitest";
 
 import type { TrackSummary } from "@/lib/spotify/client";
 
-import { artistComponent, eraComponent, scorePlaylist } from "./score";
+import { artistComponent, DEFAULT_WEIGHTS, eraComponent, genreComponent, scorePlaylist } from "./score";
 import type { PlaylistProfile } from "./types";
 
 interface Vector {
   name: string;
   now: string;
-  track: { artistIds: string[]; releaseYear: number | null };
+  track: {
+    artistIds: string[];
+    releaseYear: number | null;
+    tags?: Record<string, number> | null;
+  };
   profile: {
     artistWeights: Record<string, number>;
     eraMean: number | null;
@@ -26,11 +30,21 @@ interface Vector {
     eraCount: number;
     oldestTrackAddedAt: string | null;
     newestTrackAddedAt: string | null;
+    genreDist?: Record<string, number> | null;
+  };
+  weights?: {
+    artist: number;
+    era: number;
+    genre?: number;
+    created_boost?: number;
+    updated_boost?: number;
   };
   expected: {
     artist: number;
     matched: string[];
     era: number | null;
+    genre?: number | null;
+    genreMatched?: string[];
     score: number;
   };
 }
@@ -67,8 +81,13 @@ function toProfile(v: Vector): PlaylistProfile {
             count: v.profile.eraCount,
           }
         : null,
-    oldestTrackAddedAt: v.profile.oldestTrackAddedAt ? new Date(v.profile.oldestTrackAddedAt) : null,
-    newestTrackAddedAt: v.profile.newestTrackAddedAt ? new Date(v.profile.newestTrackAddedAt) : null,
+    oldestTrackAddedAt: v.profile.oldestTrackAddedAt
+      ? new Date(v.profile.oldestTrackAddedAt)
+      : null,
+    newestTrackAddedAt: v.profile.newestTrackAddedAt
+      ? new Date(v.profile.newestTrackAddedAt)
+      : null,
+    genreDist: v.profile.genreDist ?? null,
   };
 }
 
@@ -77,6 +96,16 @@ describe("shared scoring vectors (parity with Python)", () => {
     it(vector.name, () => {
       const track = toTrack(vector);
       const profile = toProfile(vector);
+      const trackTags = vector.track.tags ?? null;
+      const weights = vector.weights
+        ? {
+            artist: vector.weights.artist,
+            era: vector.weights.era,
+            genre: vector.weights.genre ?? 0,
+            createdBoost: vector.weights.created_boost ?? DEFAULT_WEIGHTS.createdBoost,
+            updatedBoost: vector.weights.updated_boost ?? DEFAULT_WEIGHTS.updatedBoost,
+          }
+        : DEFAULT_WEIGHTS;
 
       const artist = artistComponent(track, profile);
       expect(artist.score).toBeCloseTo(vector.expected.artist, 12);
@@ -89,8 +118,16 @@ describe("shared scoring vectors (parity with Python)", () => {
         expect(era).toBeCloseTo(vector.expected.era, 12);
       }
 
+      const genre = genreComponent(trackTags, profile);
+      if (vector.expected.genre === undefined || vector.expected.genre === null) {
+        expect(genre.score).toBeNull();
+      } else {
+        expect(genre.score).toBeCloseTo(vector.expected.genre, 12);
+      }
+      expect(genre.matched).toEqual(vector.expected.genreMatched ?? []);
+
       const now = new Date(vector.now);
-      expect(scorePlaylist(track, profile, undefined, now).score).toBeCloseTo(
+      expect(scorePlaylist(track, profile, weights, now, trackTags).score).toBeCloseTo(
         vector.expected.score,
         12,
       );

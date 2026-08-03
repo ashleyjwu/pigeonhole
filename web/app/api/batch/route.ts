@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
+import { getTrackGenreTagsBatch } from "@/lib/db/genres";
 import { findUnfiledSavedTracks } from "@/lib/db/library";
 import { loadPlaylistProfiles } from "@/lib/db/profiles";
 import { suggestPlaylists } from "@/lib/scoring/score";
@@ -35,6 +36,10 @@ export async function GET(): Promise<NextResponse<BatchPayload>> {
     loadPlaylistProfiles(session.userId),
   ]);
 
+  const tagsByTrack = await getTrackGenreTagsBatch(
+    new Map(unfiled.map((t) => [t.spotifyId, t.artistIds])),
+  );
+
   const cards: BatchCard[] = unfiled.map((track) => {
     const summary: TrackSummary = {
       id: track.spotifyId,
@@ -47,7 +52,11 @@ export async function GET(): Promise<NextResponse<BatchPayload>> {
       durationMs: track.durationMs,
       explicit: track.explicit,
     };
-    return { track: summary, suggestions: suggestPlaylists(summary, profiles, { limit: 3 }) };
+    const trackTags = tagsByTrack.get(track.spotifyId) ?? null;
+    return {
+      track: summary,
+      suggestions: suggestPlaylists(summary, profiles, { limit: 3, trackTags }),
+    };
   });
 
   return NextResponse.json({ state: "cards", cards });

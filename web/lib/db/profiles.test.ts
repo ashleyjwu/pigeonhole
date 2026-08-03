@@ -12,6 +12,7 @@ describe("mapProfileRow", () => {
       track_count: "60",
       oldest_track_added_at: "2021-01-01T00:00:00.000Z",
       newest_track_added_at: "2023-06-15T00:00:00.000Z",
+      genre_dist: { indie: 1.0 },
     });
     expect(profile).toEqual({
       playlistId: "p1",
@@ -21,6 +22,7 @@ describe("mapProfileRow", () => {
       era: { meanYear: 2016.2, stdYear: 6.1, count: 60 },
       oldestTrackAddedAt: new Date("2021-01-01T00:00:00.000Z"),
       newestTrackAddedAt: new Date("2023-06-15T00:00:00.000Z"),
+      genreDist: { indie: 1.0 },
     });
   });
 
@@ -33,11 +35,13 @@ describe("mapProfileRow", () => {
       track_count: 0,
       oldest_track_added_at: null,
       newest_track_added_at: null,
+      genre_dist: null,
     });
     expect(profile.artistWeights).toEqual({});
     expect(profile.era).toBeNull();
     expect(profile.oldestTrackAddedAt).toBeNull();
     expect(profile.newestTrackAddedAt).toBeNull();
+    expect(profile.genreDist).toBeNull();
 
     const zeroEra = mapProfileRow({
       spotify_id: "p3",
@@ -47,6 +51,7 @@ describe("mapProfileRow", () => {
       track_count: 1,
       oldest_track_added_at: null,
       newest_track_added_at: null,
+      genre_dist: null,
     });
     expect(zeroEra.era).toBeNull();
   });
@@ -61,7 +66,22 @@ describe("mapProfileRow", () => {
       track_count: 1,
       oldest_track_added_at: date,
       newest_track_added_at: date,
+      genre_dist: null,
     });
     expect(profile.oldestTrackAddedAt).toEqual(date);
+  });
+
+  it("treats an empty genre_dist object as null (no genre signal)", () => {
+    const profile = mapProfileRow({
+      spotify_id: "p5",
+      name: "x",
+      artist_weights: {},
+      era_stats: null,
+      track_count: 1,
+      oldest_track_added_at: null,
+      newest_track_added_at: null,
+      genre_dist: {},
+    });
+    expect(profile.genreDist).toBeNull();
   });
 });

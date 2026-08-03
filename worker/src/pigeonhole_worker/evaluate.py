@@ -48,6 +48,9 @@ class PlacementTrack:
     artist_ids: tuple[str, ...]
     release_year: int | None
     added_at: datetime | None = None
+    # Merged genre tags of this track's artists (tag_name -> weight). Empty
+    # dict when no artist has tag data.
+    tags: Mapping[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -104,7 +107,8 @@ def filter_by_age(
 
 def _facts(playlist_id: str, tracks: Sequence[PlacementTrack]) -> ProfileFacts:
     profile = build_profile(
-        playlist_id, [(list(t.artist_ids), t.release_year, t.added_at) for t in tracks]
+        playlist_id,
+        [(list(t.artist_ids), t.release_year, t.added_at, [t.tags]) for t in tracks],
     )
     return ProfileFacts(
         playlist_id=playlist_id,
@@ -114,6 +118,7 @@ def _facts(playlist_id: str, tracks: Sequence[PlacementTrack]) -> ProfileFacts:
         era_count=profile.era_count,
         oldest_track_added_at=profile.oldest_track_added_at,
         newest_track_added_at=profile.newest_track_added_at,
+        genre_dist=profile.genre_dist,
     )
 
 
@@ -160,6 +165,7 @@ def evaluate_placements(
                     candidate,
                     weights,
                     now=resolved_now,
+                    track_tags=held_out.tags,
                 )
 
             report.placements += 1
@@ -181,6 +187,19 @@ def evaluate_placements(
     return report
 
 
+def _merge_track_tags(
+    artist_ids: Sequence[str], tags_by_artist: Mapping[str, dict[str, float]]
+) -> dict[str, float]:
+    """Merge a track's artists' tag maps by taking the max weight per tag,
+    matching profiles.py's per-track merge (so a multi-artist track's tags
+    aren't double-counted per artist)."""
+    merged: dict[str, float] = {}
+    for artist_id in artist_ids:
+        for tag, weight in tags_by_artist.get(artist_id, {}).items():
+            merged[tag] = max(merged.get(tag, 0.0), weight)
+    return merged
+
+
 def load_placements() -> tuple[dict[str, list[PlacementTrack]], dict[str, str]]:
     """Read all stored playlists and their tracks from Postgres."""
     from pigeonhole_worker.db import connect
@@ -190,6 +209,12 @@ def load_placements() -> tuple[dict[str, list[PlacementTrack]], dict[str, str]]:
         names = {
             row[0]: row[1]
             for row in conn.execute("SELECT spotify_id, name FROM playlists").fetchall()
+        }
+        tags_by_artist: dict[str, dict[str, float]] = {
+            row[0]: row[1]
+            for row in conn.execute(
+                "SELECT spotify_id, genre_tags FROM artists WHERE genre_tags IS NOT NULL"
+            ).fetchall()
         }
         playlists: dict[str, list[PlacementTrack]] = {pid: [] for pid in names}
         rows = conn.execute(
@@ -201,8 +226,15 @@ def load_placements() -> tuple[dict[str, list[PlacementTrack]], dict[str, str]]:
             """
         ).fetchall()
         for playlist_id, track_id, artist_ids, release_year, added_at in rows:
+            artist_ids = tuple(artist_ids or [])
             playlists[playlist_id].append(
-                PlacementTrack(track_id, tuple(artist_ids or []), release_year, added_at)
+                PlacementTrack(
+                    track_id,
+                    artist_ids,
+                    release_year,
+                    added_at,
+                    tags=_merge_track_tags(artist_ids, tags_by_artist),
+                )
             )
         return playlists, names
     finally:
@@ -218,7 +250,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Drop playlists older than this (by oldest track add) from evaluation entirely.",
     )
+    parser.add_argument(
+        "--genre-weight",
+        type=float,
+        default=None,
+        help="Override the genre component's weight (0 disables it; default weights use 0.2).",
+    )
     args = parser.parse_args(argv)
+
+    weights = DEFAULT_WEIGHTS
+    if args.genre_weight is not None:
+        weights = ScoreWeights(
+            artist=weights.artist,
+            era=weights.era,
+            genre=args.genre_weight,
+            created_boost=weights.created_boost,
+            updated_boost=weights.updated_boost,
+        )
 
     playlists, names = load_placements()
     now = datetime.now(UTC)
@@ -231,7 +279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         playlists = filtered
         names = {pid: name for pid, name in names.items() if pid in filtered}
     report = evaluate_placements(
-        playlists, names, min_playlist_size=args.min_size, now=now
+        playlists, names, weights=weights, min_playlist_size=args.min_size, now=now
     )
 
     print(f"placements evaluated: {report.placements}")
