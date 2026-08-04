@@ -105,6 +105,7 @@ def sync_once(spotify_id: str | None) -> SyncStats:
             f"done: {stats.playlists_synced} playlists synced, "
             f"{stats.playlists_skipped} skipped (unchanged), "
             f"{stats.playlists_foreign} foreign (followed, not owned), "
+            f"{stats.playlists_deleted} deleted (no longer on Spotify), "
             f"{stats.tracks_upserted} tracks upserted, "
             f"{stats.saved_tracks} saved tracks, "
             f"{stats.artists_upserted} artists upserted, "

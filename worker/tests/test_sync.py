@@ -90,6 +90,7 @@ class FakeRepo:
         self.playlist_tracks: dict[str, list[PlaylistTrackRecord]] = {}
         self.saved: list[PlaylistTrackRecord] = []
         self.artists: dict[str, dict[str, Any]] = {}
+        self.deleted_playlist_ids: list[str] = []
         self.synced_at: datetime | None = None
 
     def get_playlist_snapshots(self, user_id: str) -> dict[str, str]:
@@ -114,6 +115,13 @@ class FakeRepo:
     def upsert_artists(self, artists: list[dict[str, Any]]) -> None:
         for a in artists:
             self.artists[a["id"]] = a
+
+    def delete_playlists(self, playlist_ids: list[str]) -> None:
+        for pid in playlist_ids:
+            self.playlists.pop(pid, None)
+            self.playlist_tracks.pop(pid, None)
+            self.snapshots.pop(pid, None)
+            self.deleted_playlist_ids.append(pid)
 
     def mark_user_synced(self, user_id: str, at: datetime) -> None:
         self.synced_at = at
@@ -261,3 +269,45 @@ def test_sync_passes_explicit_timestamp() -> None:
     at = datetime(2026, 7, 30, 12, 0, 0, tzinfo=UTC)
     run_sync(repo, spotify, "user-1", "owner-spotify", now=at)  # type: ignore[arg-type]
     assert repo.synced_at == at
+
+
+# ── deletion reconciliation ────────────────────────────────────────────────
+
+
+def test_sync_deletes_playlists_no_longer_returned_by_spotify() -> None:
+    # "gone" was synced in a previous run (present in stored snapshots) but
+    # Spotify no longer returns it this time — deleted, or left/unfollowed.
+    spotify = FakeSpotify(
+        playlists=[playlist_payload("p1", "snap1")],
+        playlist_items={},
+    )
+    repo = FakeRepo(snapshots={"p1": "snap1", "gone": "old-snap"})
+    stats = run_sync(repo, spotify, "user-1", "owner-spotify")  # type: ignore[arg-type]
+
+    assert stats.playlists_deleted == 1
+    assert repo.deleted_playlist_ids == ["gone"]
+    assert "gone" not in repo.snapshots
+
+
+def test_sync_does_not_delete_unchanged_playlists() -> None:
+    spotify = FakeSpotify(
+        playlists=[playlist_payload("p1", "snap1")],
+        playlist_items={},
+    )
+    repo = FakeRepo(snapshots={"p1": "snap1"})
+    stats = run_sync(repo, spotify, "user-1", "owner-spotify")  # type: ignore[arg-type]
+
+    assert stats.playlists_deleted == 0
+    assert repo.deleted_playlist_ids == []
+
+
+def test_sync_does_not_delete_anything_on_first_ever_sync() -> None:
+    spotify = FakeSpotify(
+        playlists=[playlist_payload("p1", "snap1")],
+        playlist_items={"p1": [playlist_entry(raw_track("t1"))]},
+    )
+    repo = FakeRepo()  # no stored snapshots at all
+    stats = run_sync(repo, spotify, "user-1", "owner-spotify")  # type: ignore[arg-type]
+
+    assert stats.playlists_deleted == 0
+    assert repo.deleted_playlist_ids == []

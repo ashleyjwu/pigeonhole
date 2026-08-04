@@ -57,6 +57,7 @@ class SyncStats:
     playlists_synced: int = 0
     playlists_skipped: int = 0
     playlists_foreign: int = 0
+    playlists_deleted: int = 0
     tracks_upserted: int = 0
     saved_tracks: int = 0
     artists_upserted: int = 0
@@ -82,6 +83,13 @@ class Repository(Protocol):
     def replace_saved_tracks(self, user_id: str, entries: list[PlaylistTrackRecord]) -> None: ...
 
     def upsert_artists(self, artists: list[dict[str, Any]]) -> None: ...
+
+    def delete_playlists(self, playlist_ids: list[str]) -> None:
+        """Remove playlists no longer returned by Spotify (deleted, or the
+        user left/unfollowed them). Cascades to playlist_tracks and
+        playlist_profiles so no orphaned data lingers or keeps surfacing in
+        suggestions."""
+        ...
 
     def mark_user_synced(self, user_id: str, at: datetime) -> None: ...
 
@@ -164,6 +172,7 @@ def run_sync(
 
     # 1 & 2. Playlists and their items (incremental via snapshot_id).
     stored_snapshots = repo.get_playlist_snapshots(user_id)
+    seen_playlist_ids: set[str] = set()
     for playlist in client.get_my_playlists():
         stats.playlists_seen += 1
         playlist_id = playlist["id"]
@@ -176,6 +185,7 @@ def run_sync(
             stats.playlists_foreign += 1
             continue
 
+        seen_playlist_ids.add(playlist_id)
         repo.upsert_playlist(user_id, playlist, is_owned)
 
         if stored_snapshots.get(playlist_id) == playlist["snapshot_id"]:
@@ -198,6 +208,17 @@ def run_sync(
         stats.playlists_synced += 1
         stats.tracks_upserted += len(tracks)
         note_artists(tracks)
+
+    # Reconcile deletions: a playlist we previously synced but that Spotify
+    # no longer returns has been deleted, or the user left/unfollowed it
+    # (for a collaborative one). Without this, its stale row (and stale
+    # playlist_profiles, via cascade) lingers forever and keeps surfacing in
+    # suggestions — a real bug we hit: a since-deleted 2-track playlist kept
+    # getting recommended days after it was removed on Spotify.
+    stale_playlist_ids = [pid for pid in stored_snapshots if pid not in seen_playlist_ids]
+    if stale_playlist_ids:
+        repo.delete_playlists(stale_playlist_ids)
+        stats.playlists_deleted = len(stale_playlist_ids)
 
     # 3. Saved ("liked") tracks — full replace of the set.
     saved_items = list(client.get_saved_tracks())

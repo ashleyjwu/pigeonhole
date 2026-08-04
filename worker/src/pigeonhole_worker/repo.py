@@ -137,6 +137,15 @@ class PostgresRepository:
             )
         self._conn.commit()
 
+    def delete_playlists(self, playlist_ids: list[str]) -> None:
+        if not playlist_ids:
+            return
+        self._conn.execute(
+            "DELETE FROM playlists WHERE spotify_id = ANY(%s)",
+            (playlist_ids,),
+        )
+        self._conn.commit()
+
     def mark_user_synced(self, user_id: str, at: datetime) -> None:
         self._conn.execute(
             "UPDATE users SET last_synced_at = %s WHERE id = %s",
