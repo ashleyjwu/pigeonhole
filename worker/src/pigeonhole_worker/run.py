@@ -91,7 +91,7 @@ def should_recompute_profiles(stats: SyncStats) -> bool:
     return stats.playlists_synced > 0
 
 
-def sync_once(spotify_id: str | None) -> SyncStats:
+def sync_once(spotify_id: str | None, force: bool = False) -> SyncStats:
     """One sync attempt. Raises QuotaExhaustedError if the quota is spent."""
     conn = connect()
     try:
@@ -99,7 +99,11 @@ def sync_once(spotify_id: str | None) -> SyncStats:
         print(f"[{datetime.now(UTC):%Y-%m-%d %H:%M:%S}] Syncing library for {user_spotify_id}")
         access_token = _fresh_access_token(conn, user_id)
         stats = run_sync(
-            PostgresRepository(conn), SpotifyClient(access_token), user_id, user_spotify_id
+            PostgresRepository(conn),
+            SpotifyClient(access_token),
+            user_id,
+            user_spotify_id,
+            force=force,
         )
         print(
             f"done: {stats.playlists_synced} playlists synced, "
@@ -165,12 +169,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Keep retrying across quota resets until a full sync completes.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Re-fetch every playlist's items regardless of snapshot_id. "
+            "Much heavier than a normal incremental sync — use only to "
+            "backfill a track/playlist field that didn't exist in earlier "
+            "syncs."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.until_complete:
-        run_until_complete(lambda: sync_once(args.spotify_id))
+        run_until_complete(lambda: sync_once(args.spotify_id, force=args.force))
     else:
-        sync_once(args.spotify_id)
+        sync_once(args.spotify_id, force=args.force)
     return 0
 
 

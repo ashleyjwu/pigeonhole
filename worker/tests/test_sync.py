@@ -19,7 +19,13 @@ def raw_track(track_id: str, artist_id: str = "art1", **overrides: Any) -> dict[
         "id": track_id,
         "name": f"Track {track_id}",
         "artists": [{"id": artist_id, "name": f"Artist {artist_id}"}],
-        "album": {"name": "Album", "release_date": "2020-01-15"},
+        "album": {
+            "id": f"album-{track_id}",
+            "name": "Album",
+            "release_date": "2020-01-15",
+            "images": [{"url": f"https://example.com/{track_id}.jpg"}],
+        },
+        "external_ids": {"isrc": f"ISRC{track_id}"},
         "explicit": False,
         "duration_ms": 180_000,
         "is_local": False,
@@ -137,6 +143,24 @@ def test_parse_track_maps_fields() -> None:
     assert record.artist_ids == ["art1"]
     assert record.artist_names == ["Artist art1"]
     assert record.release_year == 2020
+
+
+def test_parse_track_extracts_album_image_isrc_and_album_id() -> None:
+    # All three come from the same track object already fetched -- no extra
+    # API cost (see migrations/0007_track_album_fields.sql).
+    record = parse_track(raw_track("t1"))
+    assert record is not None
+    assert record.album_image_url == "https://example.com/t1.jpg"
+    assert record.isrc == "ISRCt1"
+    assert record.album_id == "album-t1"
+
+
+def test_parse_track_handles_missing_album_image_isrc_and_album_id() -> None:
+    record = parse_track(raw_track("t1", album={"name": "A"}, external_ids={}))
+    assert record is not None
+    assert record.album_image_url is None
+    assert record.isrc is None
+    assert record.album_id is None
 
 
 def test_parse_track_rejects_local_and_null() -> None:
@@ -311,3 +335,22 @@ def test_sync_does_not_delete_anything_on_first_ever_sync() -> None:
 
     assert stats.playlists_deleted == 0
     assert repo.deleted_playlist_ids == []
+
+
+# ── force re-sync ────────────────────────────────────────────────────────
+
+
+def test_force_resyncs_playlists_with_unchanged_snapshots() -> None:
+    # Same snapshot as already stored -- a normal sync would skip this
+    # playlist entirely. force=True re-fetches its items anyway (used to
+    # backfill a track field that didn't exist in earlier syncs).
+    spotify = FakeSpotify(
+        playlists=[playlist_payload("p1", "snap1")],
+        playlist_items={"p1": [playlist_entry(raw_track("t1"))]},
+    )
+    repo = FakeRepo(snapshots={"p1": "snap1"})
+    stats = run_sync(repo, spotify, "user-1", "owner-spotify", force=True)  # type: ignore[arg-type]
+
+    assert stats.playlists_skipped == 0
+    assert stats.playlists_synced == 1
+    assert spotify.item_fetches == ["p1"]

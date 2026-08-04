@@ -53,8 +53,12 @@ describe("getPlaylistPreview", () => {
       }
       if (sql.includes("FROM playlist_tracks")) {
         return [
-          { name: "Souvlaki Space Station", artist_ids: ["a1"] },
-          { name: "Airbag", artist_ids: ["a2", "a3"] },
+          {
+            name: "Souvlaki Space Station",
+            artist_ids: ["a1"],
+            album_image_url: "https://example.com/track1.jpg",
+          },
+          { name: "Airbag", artist_ids: ["a2", "a3"], album_image_url: null },
         ];
       }
       if (sql.includes("FROM artists")) {
@@ -77,8 +81,12 @@ describe("getPlaylistPreview", () => {
       imageUrl: "https://example.com/p1.jpg",
       trackCount: 42,
       tracks: [
-        { name: "Souvlaki Space Station", artistNames: ["Slowdive"] },
-        { name: "Airbag", artistNames: ["Radiohead", "Jonny Greenwood"] },
+        {
+          name: "Souvlaki Space Station",
+          artistNames: ["Slowdive"],
+          albumImageUrl: "https://example.com/track1.jpg",
+        },
+        { name: "Airbag", artistNames: ["Radiohead", "Jonny Greenwood"], albumImageUrl: null },
       ],
     });
     expect(query).toHaveBeenCalledTimes(3);
@@ -130,7 +138,7 @@ describe("getPlaylistPreview", () => {
         ];
       }
       if (sql.includes("FROM playlist_tracks")) {
-        return [{ name: "Song", artist_ids: ["missing"] }];
+        return [{ name: "Song", artist_ids: ["missing"], album_image_url: null }];
       }
       return []; // artist lookup finds nothing
     });

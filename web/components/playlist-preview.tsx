@@ -190,18 +190,29 @@ function PlaylistPreviewCard({ state }: { state: LoadState }) {
   );
 }
 
-/** A single track row with a color-swatch thumbnail standing in for real
- *  per-track album art (not stored locally — only the playlist-level cover
- *  is synced). The swatch is deterministic per track name, so it doesn't
- *  shift between renders. */
+/** A single track row. Uses real per-track album art when the track was
+ *  synced after migration 0007 added it; falls back to a deterministic
+ *  color swatch (same seed -> same color every render) for older tracks
+ *  that haven't been re-synced yet. */
 function PreviewTrackRow({ track }: { track: PlaylistPreviewTrack }) {
   return (
     <div className="flex items-center gap-2">
-      <div
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded text-[10px] font-semibold text-white/70 ${swatchColorForSeed(track.name)}`}
-      >
-        {track.name.charAt(0).toUpperCase()}
-      </div>
+      {track.albumImageUrl ? (
+        <Image
+          src={track.albumImageUrl}
+          alt=""
+          width={32}
+          height={32}
+          unoptimized
+          className="h-8 w-8 shrink-0 rounded object-cover"
+        />
+      ) : (
+        <div
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded text-[10px] font-semibold text-white/70 ${swatchColorForSeed(track.name)}`}
+        >
+          {track.name.charAt(0).toUpperCase()}
+        </div>
+      )}
       <div className="min-w-0">
         <p className="truncate text-xs font-medium text-neutral-200">{track.name}</p>
         <p className="truncate text-[11px] text-neutral-500">{track.artistNames.join(", ")}</p>

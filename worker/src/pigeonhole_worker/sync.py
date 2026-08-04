@@ -42,6 +42,11 @@ class TrackRecord:
     release_year: int | None
     explicit: bool
     duration_ms: int | None
+    # All three below come from the same track object already fetched — no
+    # extra API cost. See migrations/0007_track_album_fields.sql.
+    album_image_url: str | None = None
+    isrc: str | None = None
+    album_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +121,9 @@ def parse_track(raw: dict[str, Any] | None) -> TrackRecord | None:
     release_date = album.get("release_date") or ""
     year = int(release_date[:4]) if release_date[:4].isdigit() else None
     artists = [a for a in raw.get("artists", []) if a.get("id")]
+    album_images = album.get("images") or []
+    album_image_url = album_images[0].get("url") if album_images else None
+    external_ids = raw.get("external_ids") or {}
     return TrackRecord(
         spotify_id=raw["id"],
         name=raw.get("name") or "",
@@ -125,6 +133,9 @@ def parse_track(raw: dict[str, Any] | None) -> TrackRecord | None:
         release_year=year,
         explicit=bool(raw.get("explicit")),
         duration_ms=raw.get("duration_ms"),
+        album_image_url=album_image_url if isinstance(album_image_url, str) else None,
+        isrc=external_ids.get("isrc"),
+        album_id=album.get("id"),
     )
 
 
@@ -161,7 +172,13 @@ def run_sync(
     user_id: str,
     user_spotify_id: str,
     now: datetime | None = None,
+    force: bool = False,
 ) -> SyncStats:
+    """``force=True`` re-fetches every playlist's items regardless of
+    whether its snapshot_id changed. Normally unnecessary (incremental sync
+    is the point), but needed once to backfill a track field that didn't
+    exist in earlier syncs (e.g. album_image_url) across playlists whose
+    contents haven't otherwise changed."""
     stats = SyncStats()
     touched_artists: dict[str, str] = {}
 
@@ -170,7 +187,8 @@ def run_sync(
             for artist_id, artist_name in zip(track.artist_ids, track.artist_names, strict=True):
                 touched_artists[artist_id] = artist_name
 
-    # 1 & 2. Playlists and their items (incremental via snapshot_id).
+    # 1 & 2. Playlists and their items (incremental via snapshot_id, unless
+    # force=True).
     stored_snapshots = repo.get_playlist_snapshots(user_id)
     seen_playlist_ids: set[str] = set()
     for playlist in client.get_my_playlists():
@@ -188,7 +206,7 @@ def run_sync(
         seen_playlist_ids.add(playlist_id)
         repo.upsert_playlist(user_id, playlist, is_owned)
 
-        if stored_snapshots.get(playlist_id) == playlist["snapshot_id"]:
+        if not force and stored_snapshots.get(playlist_id) == playlist["snapshot_id"]:
             stats.playlists_skipped += 1
             continue
 

@@ -57,21 +57,26 @@ class PostgresRepository:
 
     def upsert_tracks(self, tracks: list[TrackRecord]) -> None:
         # `popularity` stays NULL: the field was removed from the API for
-        # dev-mode apps in Feb 2026.
+        # dev-mode apps in Feb 2026. album_image_url/isrc/album_id come from
+        # the same track object at no extra API cost (see
+        # migrations/0007_track_album_fields.sql).
         with self._conn.cursor() as cur:
             cur.executemany(
                 """
                 INSERT INTO tracks
                     (spotify_id, name, artist_ids, album_name, release_year,
-                     explicit, duration_ms)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                     explicit, duration_ms, album_image_url, isrc, album_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (spotify_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     artist_ids = EXCLUDED.artist_ids,
                     album_name = EXCLUDED.album_name,
                     release_year = EXCLUDED.release_year,
                     explicit = EXCLUDED.explicit,
-                    duration_ms = EXCLUDED.duration_ms
+                    duration_ms = EXCLUDED.duration_ms,
+                    album_image_url = EXCLUDED.album_image_url,
+                    isrc = EXCLUDED.isrc,
+                    album_id = EXCLUDED.album_id
                 """,
                 [
                     (
@@ -82,6 +87,9 @@ class PostgresRepository:
                         t.release_year,
                         t.explicit,
                         t.duration_ms,
+                        t.album_image_url,
+                        t.isrc,
+                        t.album_id,
                     )
                     for t in tracks
                 ],

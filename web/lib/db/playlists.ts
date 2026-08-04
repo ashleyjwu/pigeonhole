@@ -9,6 +9,10 @@ import { getPool } from "@/lib/db/pool";
 export interface PlaylistPreviewTrack {
   name: string;
   artistNames: string[];
+  /** Real per-track album art, or null when not yet synced (older tracks
+   *  synced before this field existed) — falls back to a generated swatch
+   *  in the UI when null. */
+  albumImageUrl: string | null;
 }
 
 export interface PlaylistPreview {
@@ -50,8 +54,12 @@ export async function getPlaylistPreview(
     return null;
   }
 
-  const trackResult = await getPool().query<{ name: string; artist_ids: string[] }>(
-    `SELECT t.name, t.artist_ids
+  const trackResult = await getPool().query<{
+    name: string;
+    artist_ids: string[];
+    album_image_url: string | null;
+  }>(
+    `SELECT t.name, t.artist_ids, t.album_image_url
      FROM playlist_tracks pt
      JOIN tracks t ON t.spotify_id = pt.track_id
      WHERE pt.playlist_id = $1
@@ -81,6 +89,7 @@ export async function getPlaylistPreview(
     tracks: trackResult.rows.map((row) => ({
       name: row.name,
       artistNames: row.artist_ids.map((id) => nameByArtistId.get(id) ?? id),
+      albumImageUrl: row.album_image_url,
     })),
   };
 }
