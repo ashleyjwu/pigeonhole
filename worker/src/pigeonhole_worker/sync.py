@@ -86,6 +86,20 @@ class Repository(Protocol):
     def mark_user_synced(self, user_id: str, at: datetime) -> None: ...
 
 
+def parse_playlist_image_url(playlist: dict[str, Any]) -> str | None:
+    """The playlist's cover art URL, or None if it has no images.
+
+    Spotify's playlist objects still return an `images` array (unlike
+    genres/popularity, this was not removed in the Feb-2026 dev-mode
+    changes) — largest image first, per the API's documented ordering.
+    """
+    images = playlist.get("images") or []
+    if not images:
+        return None
+    url = images[0].get("url")
+    return url if isinstance(url, str) and url else None
+
+
 def parse_track(raw: dict[str, Any] | None) -> TrackRecord | None:
     """Convert a raw API track object; None for local/unavailable tracks."""
     if not raw or not raw.get("id") or raw.get("is_local"):

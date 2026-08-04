@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chunk, clamp } from "./util";
+import { chunk, clamp, swatchColorForSeed } from "./util";
 
 describe("clamp", () => {
   it("returns the value when within range", () => {
@@ -38,5 +38,26 @@ describe("chunk", () => {
 
   it("rejects a non-positive size", () => {
     expect(() => chunk([1, 2, 3], 0)).toThrow();
+  });
+});
+
+describe("swatchColorForSeed", () => {
+  it("is deterministic for the same seed", () => {
+    expect(swatchColorForSeed("Airbag")).toBe(swatchColorForSeed("Airbag"));
+  });
+
+  it("returns a bg- Tailwind class", () => {
+    expect(swatchColorForSeed("Silverfuck")).toMatch(/^bg-\w+-500$/);
+  });
+
+  it("varies across different seeds", () => {
+    const colors = new Set(
+      ["a", "b", "c", "d", "e", "f", "g", "h"].map((s) => swatchColorForSeed(s)),
+    );
+    expect(colors.size).toBeGreaterThan(1);
+  });
+
+  it("handles an empty string without throwing", () => {
+    expect(() => swatchColorForSeed("")).not.toThrow();
   });
 });

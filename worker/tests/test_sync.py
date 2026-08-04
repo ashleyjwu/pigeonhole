@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pigeonhole_worker.sync import PlaylistTrackRecord, TrackRecord, parse_track, run_sync
+from pigeonhole_worker.sync import (
+    PlaylistTrackRecord,
+    TrackRecord,
+    parse_playlist_image_url,
+    parse_track,
+    run_sync,
+)
 
 # ── fixtures (sanitized shapes matching the Feb-2026 API) ────────────────
 
@@ -29,6 +35,7 @@ def playlist_payload(
         "id": playlist_id,
         "name": f"Playlist {playlist_id}",
         "description": "",
+        "images": [{"url": f"https://example.com/{playlist_id}.jpg"}],
         "snapshot_id": snapshot,
         "items": {"total": 1},  # renamed from `tracks` in Feb-2026 API
         "owner": {"id": owner},
@@ -136,6 +143,30 @@ def test_parse_track_handles_missing_release_date() -> None:
     assert record.release_year is None
 
 
+# ── parse_playlist_image_url ────────────────────────────────────────────
+
+
+def test_parse_playlist_image_url_takes_the_first_image() -> None:
+    playlist = {
+        "images": [
+            {"url": "https://example.com/large.jpg", "height": 640},
+            {"url": "https://example.com/small.jpg", "height": 64},
+        ]
+    }
+    assert parse_playlist_image_url(playlist) == "https://example.com/large.jpg"
+
+
+def test_parse_playlist_image_url_none_when_no_images() -> None:
+    assert parse_playlist_image_url({"images": []}) is None
+    assert parse_playlist_image_url({}) is None
+    assert parse_playlist_image_url({"images": None}) is None
+
+
+def test_parse_playlist_image_url_none_when_url_missing_or_empty() -> None:
+    assert parse_playlist_image_url({"images": [{"height": 640}]}) is None
+    assert parse_playlist_image_url({"images": [{"url": ""}]}) is None
+
+
 # ── full sync ────────────────────────────────────────────────────────────
 
 
@@ -167,6 +198,9 @@ def test_full_sync_persists_everything() -> None:
     assert set(repo.tracks) == {"t1", "t2", "t3", "t4"}
     assert repo.playlists["p1"]["is_owned"] is True
     assert repo.playlists["p2"]["is_owned"] is False
+    # raw playlist payload (incl. images, for the repository to extract
+    # image_url from) is passed through to upsert_playlist untouched
+    assert repo.playlists["p1"]["images"] == [{"url": "https://example.com/p1.jpg"}]
     assert [e.track_id for e in repo.playlist_tracks["p1"]] == ["t1", "t2"]
     assert [e.track_id for e in repo.saved] == ["t4"]
     # artists harvested from embedded track data (id + name)

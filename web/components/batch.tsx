@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { commitBatchAction } from "@/app/actions";
 import type { BatchCard, BatchPayload } from "@/app/api/batch/route";
+import { PlaylistPreviewInfoButton } from "@/components/playlist-preview";
 import type { BatchPlacement } from "@/lib/db/library";
 import type { Suggestion } from "@/lib/scoring/types";
 
@@ -216,19 +217,27 @@ function Card({
           <p className="text-sm text-neutral-500">No playlist looks like a fit — skip it.</p>
         ) : (
           card.suggestions.map((s, i) => (
-            <button
+            <div
               key={s.playlistId}
-              type="button"
-              onClick={() => onAccept(s)}
               className={
                 i === 0
-                  ? "flex items-center justify-between rounded-xl bg-neutral-800 px-4 py-2.5 text-left ring-1 ring-green-500/40 hover:ring-green-500"
-                  : "flex items-center justify-between rounded-xl bg-neutral-800/60 px-4 py-2 text-left hover:bg-neutral-800"
+                  ? "flex items-center justify-between rounded-xl bg-neutral-800 px-4 py-2.5 ring-1 ring-green-500/40 hover:ring-green-500"
+                  : "flex items-center justify-between rounded-xl bg-neutral-800/60 px-4 py-2 hover:bg-neutral-800"
               }
             >
-              <span className="truncate text-sm font-medium">{s.playlistName}</span>
-              <span className="ml-3 shrink-0 text-xs text-neutral-500">{s.reason}</span>
-            </button>
+              {/* A real <button> (not the whole row) accepts the
+                  suggestion, so the separate preview info button doesn't
+                  end up nested inside it. */}
+              <button
+                type="button"
+                onClick={() => onAccept(s)}
+                className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+              >
+                <span className="truncate text-sm font-medium">{s.playlistName}</span>
+                <span className="shrink-0 text-xs text-neutral-500">{s.reason}</span>
+              </button>
+              <PlaylistPreviewInfoButton playlistId={s.playlistId} className="ml-2" />
+            </div>
           ))
         )}
       </div>

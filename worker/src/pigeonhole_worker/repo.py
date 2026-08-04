@@ -8,7 +8,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from pigeonhole_worker.sync import PlaylistTrackRecord, TrackRecord
+from pigeonhole_worker.sync import PlaylistTrackRecord, TrackRecord, parse_playlist_image_url
 
 
 class PostgresRepository:
@@ -29,12 +29,13 @@ class PostgresRepository:
         self._conn.execute(
             """
             INSERT INTO playlists
-                (spotify_id, owner_user_id, name, description, snapshot_id,
+                (spotify_id, owner_user_id, name, description, image_url, snapshot_id,
                  track_count, is_owned, collaborative)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (spotify_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 description = EXCLUDED.description,
+                image_url = EXCLUDED.image_url,
                 snapshot_id = EXCLUDED.snapshot_id,
                 track_count = EXCLUDED.track_count,
                 is_owned = EXCLUDED.is_owned,
@@ -45,6 +46,7 @@ class PostgresRepository:
                 user_id,
                 playlist.get("name") or "",
                 playlist.get("description"),
+                parse_playlist_image_url(playlist),
                 playlist["snapshot_id"],
                 (playlist.get("tracks") or {}).get("total", 0),
                 is_owned,

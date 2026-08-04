@@ -2,6 +2,7 @@
 
 import type { AddResult } from "@/app/actions";
 import { addTrackAction } from "@/app/actions";
+import { PlaylistHoverPreview } from "@/components/playlist-preview";
 import type { AnnotatedSuggestion } from "@/lib/suggest";
 import type { TrackSummary } from "@/lib/spotify/client";
 
@@ -49,7 +50,9 @@ export function SuggestionList({
             className="flex items-center justify-between gap-3 rounded-xl bg-neutral-900 px-4 py-3"
           >
             <div className="min-w-0">
-              <p className="truncate font-medium">{suggestion.playlistName}</p>
+              <PlaylistHoverPreview playlistId={suggestion.playlistId} className="max-w-full">
+                <p className="truncate font-medium">{suggestion.playlistName}</p>
+              </PlaylistHoverPreview>
               <p className="truncate text-xs text-neutral-500">{suggestion.reason}</p>
             </div>
             <button
