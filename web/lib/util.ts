@@ -27,6 +27,20 @@ export function chunk<T>(items: T[], size: number): T[][] {
 }
 
 /**
+ * Fisher-Yates shuffle. Returns a new array; never mutates `items`. Accepts
+ * an injectable random source so tests can be deterministic — real callers
+ * just use the default `Math.random`.
+ */
+export function shuffle<T>(items: T[], random: () => number = Math.random): T[] {
+  const result = items.slice();
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j]!, result[i]!];
+  }
+  return result;
+}
+
+/**
  * A fixed palette of Tailwind background classes. Kept as literal strings
  * (not template-built) so Tailwind's static class scanner picks them all up
  * — a dynamically-built class name would get purged from the build.

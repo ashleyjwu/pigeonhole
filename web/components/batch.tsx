@@ -8,6 +8,7 @@ import type { BatchCard, BatchPayload } from "@/app/api/batch/route";
 import { PlaylistPreviewInfoButton } from "@/components/playlist-preview";
 import type { BatchPlacement } from "@/lib/db/library";
 import type { Suggestion } from "@/lib/scoring/types";
+import { shuffle } from "@/lib/util";
 
 type Decision =
   | { kind: "accept"; suggestion: Suggestion }
@@ -19,6 +20,10 @@ const SWIPE_THRESHOLD_PX = 80;
 
 export function Batch() {
   const [payload, setPayload] = useState<BatchPayload | null>(null);
+  // Card display order, independent of the order the API returned them in
+  // -- lets Shuffle reorder without needing a re-fetch. Seeded from the
+  // payload once it loads (see the effect below).
+  const [orderedCards, setOrderedCards] = useState<BatchCard[]>([]);
   const [cursor, setCursor] = useState(0);
   const [decisions, setDecisions] = useState<Map<string, Decision>>(new Map());
   const [commitState, setCommitState] = useState<CommitState>("idle");
@@ -30,7 +35,10 @@ export function Batch() {
   useEffect(() => {
     void fetch("/api/batch")
       .then((r) => r.json() as Promise<BatchPayload>)
-      .then(setPayload)
+      .then((data) => {
+        setPayload(data);
+        setOrderedCards(data.state === "cards" ? data.cards : []);
+      })
       .catch(() => setPayload(null));
   }, []);
 
@@ -40,7 +48,7 @@ export function Batch() {
     return () => clearTimeout(timeout);
   }, [lastDecisionLabel]);
 
-  const cards = payload?.state === "cards" ? payload.cards : [];
+  const cards = orderedCards;
   const current = cards[cursor];
   const accepted = useMemo(
     () =>
@@ -56,6 +64,13 @@ export function Batch() {
       decision.kind === "accept" ? `Queued for ${decision.suggestion.playlistName}` : "Skipped",
     );
     setCursor((c) => c + 1);
+  }
+
+  // Reshuffles only the not-yet-reviewed cards (from `cursor` onward),
+  // leaving already-decided ones in place -- re-rolling doesn't lose or
+  // touch progress, and can be tapped again any time during review.
+  function handleShuffle() {
+    setOrderedCards((prev) => [...prev.slice(0, cursor), ...shuffle(prev.slice(cursor))]);
   }
 
   async function handleCommit() {
@@ -101,7 +116,10 @@ export function Batch() {
           setCommitState("idle");
           void fetch("/api/batch")
             .then((r) => r.json() as Promise<BatchPayload>)
-            .then(setPayload);
+            .then((data) => {
+              setPayload(data);
+              setOrderedCards(data.state === "cards" ? data.cards : []);
+            });
         }}
       />
     );
@@ -118,11 +136,26 @@ export function Batch() {
     );
   }
 
+  const remaining = cards.length - cursor;
+
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-3">
-      <p className="text-xs text-neutral-500">
-        {cursor + 1} of {cards.length} · {accepted} queued so far
-      </p>
+      <div className="flex w-full items-center justify-between">
+        <p className="text-xs text-neutral-500">
+          {cursor + 1} of {cards.length} · {accepted} queued so far
+        </p>
+        {remaining > 1 && (
+          <button
+            type="button"
+            onClick={handleShuffle}
+            className="flex items-center gap-1 rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+            aria-label={`Shuffle the remaining ${remaining} songs`}
+          >
+            <ShuffleIcon />
+            Shuffle
+          </button>
+        )}
+      </div>
       <Card
         key={current.track.id}
         card={current}
@@ -343,6 +376,21 @@ function CommitSummary({
         Continue
       </button>
     </div>
+  );
+}
+
+function ShuffleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
+      <path
+        d="M4 6h3.5l7 12H18M4 18h3.5l1.6-2.7M18 6h-3.9l-1 1.7"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M15.5 4l3 2-3 2M15.5 16l3 2-3 2" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
