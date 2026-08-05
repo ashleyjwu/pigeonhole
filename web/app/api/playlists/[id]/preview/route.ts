@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { auth } from "@/auth";
 import { getPlaylistPreview, type PlaylistPreview } from "@/lib/db/playlists";
+import { resolveSession } from "@/lib/session";
 
 export type PlaylistPreviewPayload =
   | { state: "unauthenticated" }
@@ -17,8 +17,8 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse<PlaylistPreviewPayload>> {
-  const session = await auth();
-  if (!session?.userId) {
+  const session = await resolveSession();
+  if (!session) {
     return NextResponse.json({ state: "unauthenticated" }, { status: 401 });
   }
 

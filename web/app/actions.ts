@@ -1,7 +1,10 @@
 "use server";
 
-import { auth } from "@/auth";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
 import { recordAddition, recordBatchAdditions, type BatchPlacement } from "@/lib/db/library";
+import { DEMO_COOKIE, resolveSession } from "@/lib/session";
 import { SpotifyClient, SpotifyQuotaError, type TrackSummary } from "@/lib/spotify/client";
 import { getValidAccessToken } from "@/lib/spotify/tokens";
 
@@ -10,14 +13,41 @@ export interface AddResult {
   error?: "unauthenticated" | "quota-exhausted" | "failed";
 }
 
+const DEMO_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 7;
+
+/** Enter the read-only public demo (no Spotify login). */
+export async function startDemoAction(): Promise<void> {
+  const store = await cookies();
+  store.set(DEMO_COOKIE, "1", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: DEMO_COOKIE_MAX_AGE_S,
+  });
+  redirect("/");
+}
+
+/** Leave the demo. */
+export async function exitDemoAction(): Promise<void> {
+  const store = await cookies();
+  store.delete(DEMO_COOKIE);
+  redirect("/");
+}
+
 /** Add the track to the playlist on Spotify, then mirror it locally. */
 export async function addTrackAction(
   playlistId: string,
   track: TrackSummary,
 ): Promise<AddResult> {
-  const session = await auth();
-  if (!session?.userId) {
+  const session = await resolveSession();
+  if (!session) {
     return { ok: false, error: "unauthenticated" };
+  }
+  // Demo is read-only: a demo visitor can't see playlist contents and owns
+  // no real Spotify account, so "adding" is a no-op success — the UI shows
+  // the added state without any Spotify write or DB change.
+  if (session.isDemo) {
+    return { ok: true };
   }
   try {
     const accessToken = await getValidAccessToken(session.userId);
@@ -59,12 +89,17 @@ export interface BatchCommitResult {
 export async function commitBatchAction(
   placements: BatchPlacement[],
 ): Promise<BatchCommitResult> {
-  const session = await auth();
-  if (!session?.userId) {
+  const session = await resolveSession();
+  if (!session) {
     return { ok: false, committedTrackIds: [], error: "unauthenticated" };
   }
   if (placements.length === 0) {
     return { ok: true, committedTrackIds: [] };
+  }
+  // Demo is read-only: report every placement as committed without touching
+  // Spotify or the DB, so the batch flow's success UI works end to end.
+  if (session.isDemo) {
+    return { ok: true, committedTrackIds: placements.map((p) => p.track.id) };
   }
 
   const byPlaylist = new Map<string, BatchPlacement[]>();

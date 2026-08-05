@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { auth } from "@/auth";
 import { getTrackGenreTagsBatch } from "@/lib/db/genres";
 import { findUnfiledSavedTracks } from "@/lib/db/library";
 import { loadPlaylistProfiles } from "@/lib/db/profiles";
 import { suggestPlaylists } from "@/lib/scoring/score";
+import { resolveSession } from "@/lib/session";
 import type { Suggestion } from "@/lib/scoring/types";
 import type { TrackSummary } from "@/lib/spotify/client";
 
@@ -26,8 +26,8 @@ const MAX_CARDS = 100;
  * definition, so every suggestion is a genuine "not yet added" candidate.)
  */
 export async function GET(): Promise<NextResponse<BatchPayload>> {
-  const session = await auth();
-  if (!session?.userId) {
+  const session = await resolveSession();
+  if (!session) {
     return NextResponse.json({ state: "unauthenticated" }, { status: 401 });
   }
 

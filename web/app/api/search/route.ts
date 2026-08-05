@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { auth } from "@/auth";
+import { checkDemoSearchLimit, clientIpFrom } from "@/lib/rate-limit";
+import { resolveSession } from "@/lib/session";
+import { getAppAccessToken } from "@/lib/spotify/app-token";
 import { SpotifyClient, SpotifyQuotaError, type TrackSummary } from "@/lib/spotify/client";
 import { getValidAccessToken } from "@/lib/spotify/tokens";
 import { getSuggestionsForTrack, type AnnotatedSuggestion } from "@/lib/suggest";
@@ -13,14 +15,15 @@ export interface SearchResultItem {
 export type SearchPayload =
   | { state: "unauthenticated" }
   | { state: "quota-exhausted" }
+  | { state: "rate-limited" }
   | { state: "empty-query" }
   | { state: "results"; results: SearchResultItem[] };
 
 const MAX_RESULTS = 5;
 
 export async function GET(request: NextRequest): Promise<NextResponse<SearchPayload>> {
-  const session = await auth();
-  if (!session?.userId) {
+  const session = await resolveSession();
+  if (!session) {
     return NextResponse.json({ state: "unauthenticated" }, { status: 401 });
   }
 
@@ -31,7 +34,20 @@ export async function GET(request: NextRequest): Promise<NextResponse<SearchPayl
 
   const userId = session.userId;
   try {
-    const accessToken = await getValidAccessToken(userId);
+    // Demo search uses an app-only (Client Credentials) token — no user
+    // login, not tied to the 5-user allowlist — but is rate-limited to
+    // protect the shared dev-mode quota.
+    let accessToken: string;
+    if (session.isDemo) {
+      const limit = checkDemoSearchLimit(clientIpFrom(request.headers));
+      if (!limit.allowed) {
+        return NextResponse.json({ state: "rate-limited" }, { status: 429 });
+      }
+      accessToken = await getAppAccessToken();
+    } else {
+      accessToken = await getValidAccessToken(userId);
+    }
+
     const tracks = await new SpotifyClient(accessToken).searchTracks(query, MAX_RESULTS);
     const results = await Promise.all(
       tracks.map(async (track) => ({

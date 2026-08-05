@@ -8,14 +8,14 @@ import { Search } from "@/components/search";
 
 type Tab = "now-playing" | "search" | "batch";
 
-export function HomeTabs() {
+export function HomeTabs({ isDemo = false }: { isDemo?: boolean }) {
   const [tab, setTab] = useState<Tab>("now-playing");
 
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-6">
       <div className="flex gap-1 rounded-full bg-neutral-900 p-1 text-sm">
         <TabButton active={tab === "now-playing"} onClick={() => setTab("now-playing")}>
-          Now playing
+          {isDemo ? "Sample track" : "Now playing"}
         </TabButton>
         <TabButton active={tab === "search"} onClick={() => setTab("search")}>
           Search
@@ -24,7 +24,13 @@ export function HomeTabs() {
           Sort likes
         </TabButton>
       </div>
-      {tab === "now-playing" ? <Hero /> : tab === "search" ? <Search /> : <Batch />}
+      {tab === "now-playing" ? (
+        <Hero isDemo={isDemo} />
+      ) : tab === "search" ? (
+        <Search />
+      ) : (
+        <Batch />
+      )}
     </div>
   );
 }

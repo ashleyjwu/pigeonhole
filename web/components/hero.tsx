@@ -8,7 +8,7 @@ import { SuggestionList, type AddState } from "@/components/suggestion-list";
 
 const POLL_INTERVAL_MS = 10_000;
 
-export function Hero() {
+export function Hero({ isDemo = false }: { isDemo?: boolean }) {
   const [payload, setPayload] = useState<NowPlayingPayload | null>(null);
   const [addStates, setAddStates] = useState<Record<string, AddState>>({});
   const trackIdRef = useRef<string | null>(null);
@@ -34,8 +34,13 @@ export function Hero() {
 
   useEffect(() => {
     // Initial load via a 0ms timer keeps state updates out of the effect body
-    // (react-hooks/set-state-in-effect) while polling handles refreshes.
+    // (react-hooks/set-state-in-effect).
     const initial = setTimeout(() => void refresh(), 0);
+    // Demo mode has no live player to poll — the visitor advances tracks
+    // manually with "Try another song".
+    if (isDemo) {
+      return () => clearTimeout(initial);
+    }
     const interval = setInterval(() => {
       // Be gentle with the API quota: poll only while the tab is visible.
       if (document.visibilityState === "visible" && !quotaExhaustedRef.current) {
@@ -46,7 +51,7 @@ export function Hero() {
       clearTimeout(initial);
       clearInterval(interval);
     };
-  }, [refresh]);
+  }, [refresh, isDemo]);
 
   if (payload === null) {
     return <StatusCard title="Connecting..." body="Checking what's playing." />;
@@ -66,7 +71,11 @@ export function Hero() {
     return (
       <StatusCard
         title="Nothing playing"
-        body="Play a song on Spotify and it will show up here with playlist suggestions."
+        body={
+          isDemo
+            ? "No sample track available."
+            : "Play a song on Spotify and it will show up here with playlist suggestions."
+        }
       />
     );
   }
@@ -88,7 +97,9 @@ export function Hero() {
           <div className="h-20 w-20 rounded-lg bg-neutral-800" />
         )}
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-widest text-green-400">Now playing</p>
+          <p className="text-xs uppercase tracking-widest text-green-400">
+            {isDemo ? "Sample track" : "Now playing"}
+          </p>
           <p className="truncate text-lg font-semibold">{track.name}</p>
           <p className="truncate text-sm text-neutral-400">
             {track.artistNames.join(", ")}
@@ -96,6 +107,16 @@ export function Hero() {
           </p>
         </div>
       </div>
+
+      {isDemo && (
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="self-start rounded-full border border-neutral-700 px-4 py-1.5 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white"
+        >
+          Try another song
+        </button>
+      )}
 
       <div className="flex flex-col gap-3">
         <p className="text-xs uppercase tracking-widest text-neutral-500">File it under</p>

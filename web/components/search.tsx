@@ -58,6 +58,13 @@ export function Search() {
         </p>
       )}
 
+      {payload?.state === "rate-limited" && (
+        <p className="rounded-lg bg-amber-900/20 px-3 py-2 text-xs text-amber-300">
+          Whoa, easy on the search — the demo is limited to 10 searches a
+          minute. Give it a moment and try again.
+        </p>
+      )}
+
       {payload?.state === "results" &&
         (payload.results.length === 0 ? (
           <p className="text-sm text-neutral-400">No tracks found.</p>
