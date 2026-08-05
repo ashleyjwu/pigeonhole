@@ -15,7 +15,7 @@ export function HomeTabs({ isDemo = false }: { isDemo?: boolean }) {
     <div className="flex w-full max-w-md flex-col items-center gap-6">
       <div className="flex gap-1 rounded-full bg-neutral-900 p-1 text-sm">
         <TabButton active={tab === "now-playing"} onClick={() => setTab("now-playing")}>
-          {isDemo ? "Sample track" : "Now playing"}
+          {isDemo ? "Currently playing" : "Now playing"}
         </TabButton>
         <TabButton active={tab === "search"} onClick={() => setTab("search")}>
           Search

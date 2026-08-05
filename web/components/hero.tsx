@@ -83,7 +83,7 @@ export function Hero({ isDemo = false }: { isDemo?: boolean }) {
   const { track, suggestions } = payload;
   return (
     <div className="flex w-full max-w-md flex-col gap-6">
-      <div className="flex items-center gap-4 rounded-2xl bg-neutral-900 p-4">
+      <div className="relative flex items-center gap-4 rounded-2xl bg-neutral-900 p-4">
         {track.albumImageUrl ? (
           <Image
             src={track.albumImageUrl}
@@ -96,9 +96,9 @@ export function Hero({ isDemo = false }: { isDemo?: boolean }) {
         ) : (
           <div className="h-20 w-20 rounded-lg bg-neutral-800" />
         )}
-        <div className="min-w-0">
+        <div className={`min-w-0 ${isDemo ? "pr-32" : ""}`}>
           <p className="text-xs uppercase tracking-widest text-green-400">
-            {isDemo ? "Sample track" : "Now playing"}
+            {isDemo ? "Currently playing" : "Now playing"}
           </p>
           <p className="truncate text-lg font-semibold">{track.name}</p>
           <p className="truncate text-sm text-neutral-400">
@@ -106,17 +106,16 @@ export function Hero({ isDemo = false }: { isDemo?: boolean }) {
             {track.releaseYear ? ` · ${track.releaseYear}` : ""}
           </p>
         </div>
+        {isDemo && (
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className="absolute right-3 top-3 whitespace-nowrap rounded-full border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-400 transition hover:border-neutral-500 hover:text-white"
+          >
+            try another song
+          </button>
+        )}
       </div>
-
-      {isDemo && (
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          className="self-start rounded-full border border-neutral-700 px-4 py-1.5 text-xs text-neutral-300 transition hover:border-neutral-500 hover:text-white"
-        >
-          Try another song
-        </button>
-      )}
 
       <div className="flex flex-col gap-3">
         <p className="text-xs uppercase tracking-widest text-neutral-500">File it under</p>
