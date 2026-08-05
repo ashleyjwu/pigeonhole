@@ -46,3 +46,6 @@ Thumbs.db
 .idea/
 *.swp
 *~
+
+# ── Design-review sandboxes (static mockups, no real data) ──
+/web/app/dev/
