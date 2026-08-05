@@ -54,12 +54,13 @@ export async function findUnfiledSavedTracks(
     name: string;
     artist_ids: string[];
     album_name: string | null;
+    album_image_url: string | null;
     release_year: number | null;
     duration_ms: number | null;
     explicit: boolean;
   }>(
-    `SELECT t.spotify_id, t.name, t.artist_ids, t.album_name, t.release_year,
-            t.duration_ms, t.explicit
+    `SELECT t.spotify_id, t.name, t.artist_ids, t.album_name, t.album_image_url,
+            t.release_year, t.duration_ms, t.explicit
      FROM saved_tracks st
      JOIN tracks t ON t.spotify_id = st.track_id
      WHERE st.user_id = $1
@@ -89,7 +90,7 @@ export async function findUnfiledSavedTracks(
     artistIds: row.artist_ids,
     artistNames: row.artist_ids.map((id) => nameByArtistId.get(id) ?? id),
     albumName: row.album_name,
-    albumImageUrl: null, // not stored locally; only fetched live for hero/search
+    albumImageUrl: row.album_image_url,
     releaseYear: row.release_year,
     durationMs: row.duration_ms,
     explicit: row.explicit,

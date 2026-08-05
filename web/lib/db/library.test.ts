@@ -22,6 +22,7 @@ describe("findUnfiledSavedTracks", () => {
             name: "Song",
             artist_ids: ["a1", "a2"],
             album_name: "Album",
+            album_image_url: "https://example.com/t1.jpg",
             release_year: 2020,
             duration_ms: 200_000,
             explicit: false,
@@ -47,13 +48,37 @@ describe("findUnfiledSavedTracks", () => {
         artistIds: ["a1", "a2"],
         artistNames: ["Artist One", "Artist Two"],
         albumName: "Album",
-        albumImageUrl: null,
+        albumImageUrl: "https://example.com/t1.jpg",
         releaseYear: 2020,
         durationMs: 200_000,
         explicit: false,
       },
     ]);
     expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes through a null album_image_url for tracks synced before it was tracked", async () => {
+    mockPool((sql) => {
+      if (sql.includes("FROM saved_tracks")) {
+        return [
+          {
+            spotify_id: "t1",
+            name: "Song",
+            artist_ids: ["a1"],
+            album_name: "Album",
+            album_image_url: null,
+            release_year: 2020,
+            duration_ms: 200_000,
+            explicit: false,
+          },
+        ];
+      }
+      return [{ spotify_id: "a1", name: "Artist" }];
+    });
+
+    const { findUnfiledSavedTracks } = await import("./library");
+    const tracks = await findUnfiledSavedTracks("user-1");
+    expect(tracks[0]?.albumImageUrl).toBeNull();
   });
 
   it("skips the artist lookup entirely when there are no candidate tracks", async () => {
@@ -76,6 +101,7 @@ describe("findUnfiledSavedTracks", () => {
             name: "Song",
             artist_ids: ["missing"],
             album_name: null,
+            album_image_url: null,
             release_year: null,
             duration_ms: null,
             explicit: false,
