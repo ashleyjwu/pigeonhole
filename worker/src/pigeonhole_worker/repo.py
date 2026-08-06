@@ -8,7 +8,12 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from pigeonhole_worker.sync import PlaylistTrackRecord, TrackRecord, parse_playlist_image_url
+from pigeonhole_worker.sync import (
+    PlaylistTrackRecord,
+    TrackRecord,
+    parse_playlist_image_url,
+    parse_playlist_track_count,
+)
 
 
 class PostgresRepository:
@@ -48,7 +53,7 @@ class PostgresRepository:
                 playlist.get("description"),
                 parse_playlist_image_url(playlist),
                 playlist["snapshot_id"],
-                (playlist.get("tracks") or {}).get("total", 0),
+                parse_playlist_track_count(playlist),
                 is_owned,
                 bool(playlist.get("collaborative")),
             ),

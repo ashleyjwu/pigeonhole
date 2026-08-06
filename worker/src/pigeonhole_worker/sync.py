@@ -113,6 +113,16 @@ def parse_playlist_image_url(playlist: dict[str, Any]) -> str | None:
     return url if isinstance(url, str) and url else None
 
 
+def parse_playlist_track_count(playlist: dict[str, Any]) -> int:
+    """The playlist's track total. Feb-2026 renamed the playlist object's
+    ``tracks`` field to ``items`` (``items.total``); the old name is checked
+    as a fallback so either shape works.
+    """
+    container = playlist.get("items") or playlist.get("tracks") or {}
+    total = container.get("total", 0)
+    return total if isinstance(total, int) else 0
+
+
 def parse_track(raw: dict[str, Any] | None) -> TrackRecord | None:
     """Convert a raw API track object; None for local/unavailable tracks."""
     if not raw or not raw.get("id") or raw.get("is_local"):

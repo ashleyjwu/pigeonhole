@@ -7,6 +7,7 @@ from pigeonhole_worker.sync import (
     PlaylistTrackRecord,
     TrackRecord,
     parse_playlist_image_url,
+    parse_playlist_track_count,
     parse_track,
     run_sync,
 )
@@ -197,6 +198,24 @@ def test_parse_playlist_image_url_none_when_no_images() -> None:
 def test_parse_playlist_image_url_none_when_url_missing_or_empty() -> None:
     assert parse_playlist_image_url({"images": [{"height": 640}]}) is None
     assert parse_playlist_image_url({"images": [{"url": ""}]}) is None
+
+
+# ── parse_playlist_track_count ───────────────────────────────────────────
+
+
+def test_parse_playlist_track_count_reads_items_total() -> None:
+    # Feb-2026 API shape: the count lives under items.total, not tracks.total.
+    assert parse_playlist_track_count({"items": {"total": 42}}) == 42
+
+
+def test_parse_playlist_track_count_falls_back_to_tracks() -> None:
+    assert parse_playlist_track_count({"tracks": {"total": 7}}) == 7
+
+
+def test_parse_playlist_track_count_zero_when_absent() -> None:
+    assert parse_playlist_track_count({}) == 0
+    assert parse_playlist_track_count({"items": {}}) == 0
+    assert parse_playlist_track_count({"items": None}) == 0
 
 
 # ── full sync ────────────────────────────────────────────────────────────
